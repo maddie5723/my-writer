@@ -1,11 +1,14 @@
 import { CreateMLCEngine } from "https://esm.run/@mlc-ai/web-llm";
 
+// ---------- helpers ----------
 const $ = (id) => document.getElementById(id);
 const save = (k, v) => localStorage.setItem(k, JSON.stringify(v));
 const load = (k, d=null) => { try{ const v = JSON.parse(localStorage.getItem(k)); return v ?? d; } catch { return d; } };
 const uuid = () => Math.random().toString(36).slice(2,10);
 const clamp = (lo,hi,x)=> Math.max(lo, Math.min(hi, x));
+const hexToRgba = (hex, a)=>{ try{ const m=hex.replace("#",""); const i=parseInt(m,16); const r=(i>>16)&255, g=(i>>8)&255, b=i&255; return `rgba(${r},${g},${b},${a})`; }catch{ return "rgba(0,0,0,0.2)"; } };
 
+// ---------- state ----------
 let settings = load("settings", { model:"Llama-3.2-1B-Instruct-q4f32_1-MLC", temp:0.9, maxTok:512, globalStyle:"" });
 let tiles = load("tiles", [
   {key:"characters", label:"Characters", color:"#739c80"},
@@ -18,30 +21,30 @@ let characters = load("characters", []);
 let lore = load("lore", []);
 let engine = null;
 
+// ---------- bootstrap ----------
 window.addEventListener("DOMContentLoaded", () => {
   bindGlobal();
   renderHome();
   show("home");
 });
 
+// ---------- engine ----------
 async function ensureEngine(){
   if (engine) return;
   try {
     engine = await CreateMLCEngine(settings.model);
   } catch (e){
-    console.warn("Engine not available yet or failed to load.", e);
+    console.warn("Engine failed to load:", e);
     engine = null;
   }
 }
 
+// ---------- nav ----------
 function show(page){
   document.querySelectorAll(".page").forEach(p=>p.classList.remove("active"));
-  const tgt = document.querySelector(`.page[data-page='${page}']`);
-  if (tgt) tgt.classList.add("active");
-
+  document.querySelector(`.page[data-page='${page}']`)?.classList.add("active");
   document.querySelectorAll(".dockBtn").forEach(b=>b.classList.remove("active"));
-  const tab = document.querySelector(`.dockBtn[data-page='${page}']`);
-  if (tab) tab.classList.add("active");
+  document.querySelector(`.dockBtn[data-page='${page}']`)?.classList.add("active");
 
   if (page === "home") renderHome();
   if (page === "characters") { bindCharactersUI(); renderCharacters(); }
@@ -52,16 +55,12 @@ function show(page){
 
 function bindGlobal(){
   document.querySelectorAll(".dockBtn").forEach(btn=> btn.onclick = ()=> show(btn.dataset.page));
-
-  const mb = $("menuBtn"), md = $("menuDrawer"), cd = $("closeDrawer");
-  if (mb && md){
-    mb.onclick = ()=>{ $("drawerName").textContent = $("profName")?.value || "You"; md.showModal(); };
-  }
-  if (cd && md){ cd.onclick = ()=> md.close(); }
-
-  document.querySelectorAll(".qbtn").forEach(b=> b.onclick = ()=>{ md?.close(); show(b.dataset.jump); });
+  $("menuBtn").onclick = ()=>{ $("drawerName").textContent = $("profName")?.value || "You"; $("menuDrawer").showModal(); };
+  $("closeDrawer").onclick = ()=> $("menuDrawer").close();
+  document.querySelectorAll(".qbtn").forEach(b=> b.onclick = ()=>{ $("menuDrawer").close(); show(b.dataset.jump); });
 }
 
+// ---------- home ----------
 function renderHome(){
   const wrap = $("homeTiles"); if (!wrap) return;
   wrap.innerHTML = "";
@@ -87,50 +86,103 @@ function editTile(t){
   t.label=label; t.color=color; save("tiles", tiles); renderHome();
 }
 
+// ---------- characters ----------
 function bindCharactersUI(){
   const btn = $("newCharBtn");
   if (btn && !btn._bound){
     btn._bound = true;
-    btn.onclick = () => {
-      const name = (prompt("Character name?") || "").trim() || "Unnamed";
-      const tags = (prompt("Tags (comma separated)?") || "")
-        .split(",").map(s=>s.trim()).filter(Boolean);
-      const ch = {
-        id: uuid(),
-        name,
-        tags,
-        summary: "",
-        boundaries: "Adults 21+, consensual; cussing allowed.",
-        appearance: "",
-        personality: ""
-      };
-      characters.push(ch); save("characters", characters);
-      renderCharacters();
-      alert(`Created: ${ch.name}`);
+    btn.onclick = ()=> openCharModal(); // create
+  }
+
+  // modal controls
+  const modal = $("charModal");
+  const cancel = $("charCancel");
+  if (cancel && !cancel._bound){
+    cancel._bound = true;
+    cancel.onclick = (e)=>{ e.preventDefault(); modal.close(); };
+  }
+  const del = $("charDelete");
+  if (del && !del._bound){
+    del._bound = true;
+    del.onclick = (e)=>{
+      e.preventDefault();
+      const id = del.dataset.id;
+      if (!id) return modal.close();
+      if (!confirm("Delete this character?")) return;
+      characters = characters.filter(c=>c.id !== id);
+      save("characters", characters);
+      modal.close(); renderCharacters();
     };
   }
+  const saveBtn = $("charSave");
+  if (saveBtn && !saveBtn._bound){
+    saveBtn._bound = true;
+    saveBtn.onclick = (e)=>{
+      e.preventDefault();
+      const id = saveBtn.dataset.id || uuid();
+      const obj = {
+        id,
+        name: $("chName").value.trim() || "Unnamed",
+        tags: ($("chTags").value || "").split(",").map(s=>s.trim()).filter(Boolean),
+        avatar: $("chAvatar").value.trim(),
+        speech: $("chSpeech").value.trim(),
+        personality: $("chPersonality").value.trim(),
+        appearance: $("chAppearance").value.trim(),
+        boundaries: $("chBoundaries").value.trim() || "Adults 21+, consensual; cussing allowed.",
+        adultOnly: $("chAdult").checked,
+        private: $("chPrivate").checked,
+        shareReadOnly: $("chShareRO").checked
+      };
+      const existing = characters.findIndex(c=>c.id===id);
+      if (existing>=0) characters[existing]=obj; else characters.push(obj);
+      save("characters", characters);
+      modal.close(); renderCharacters();
+    };
+  }
+}
+function openCharModal(ch=null){
+  const isEdit = !!ch;
+  $("charModalTitle").textContent = isEdit ? "Edit Character" : "New Character";
+  $("chName").value = ch?.name || "";
+  $("chTags").value = (ch?.tags||[]).join(", ");
+  $("chAvatar").value = ch?.avatar || "";
+  $("chSpeech").value = ch?.speech || "";
+  $("chPersonality").value = ch?.personality || "";
+  $("chAppearance").value = ch?.appearance || "";
+  $("chBoundaries").value = ch?.boundaries || "Adults 21+, consensual; cussing allowed.";
+  $("chAdult").checked = ch?.adultOnly ?? true;
+  $("chPrivate").checked = ch?.private ?? true;
+  $("chShareRO").checked = ch?.shareReadOnly ?? false;
+  $("charDelete").style.display = isEdit ? "inline-block" : "none";
+  $("charDelete").dataset.id = ch?.id || "";
+  $("charSave").dataset.id = ch?.id || "";
+  $("charModal").showModal();
 }
 function renderCharacters(){
   const grid = $("charGrid"); if (!grid) return;
   grid.innerHTML = "";
   if (!characters.length){
-    const empty = document.createElement("div");
-    empty.className="hint";
-    empty.textContent="No characters yet. Tap + New Character to add one.";
-    grid.appendChild(empty);
-    return;
+    const empty = document.createElement("div"); empty.className="hint";
+    empty.textContent="No characters yet. Tap + New Character to add one."; grid.appendChild(empty); return;
   }
   characters.forEach(ch=>{
     const el=document.createElement("div"); el.className="tile";
-    el.innerHTML = `<div class="label">${ch.name}</div><div class="hint">${(ch.tags||[]).slice(0,3).join(", ")}</div>`;
-    el.onclick = ()=> openChat(ch);
+    el.innerHTML = `
+      <div class="charCard">
+        <div class="pic" style="${ch.avatar?`background-image:url('${ch.avatar.replace(/"/g,'\"')}');`:""}"></div>
+        <div class="meta">
+          <div class="name">${ch.name}</div>
+          <div class="tags">${(ch.tags||[]).slice(0,4).join(", ")}</div>
+        </div>
+      </div>
+    `;
+    // Tap to edit; long-press could be future chat open
+    el.onclick = ()=> openCharModal(ch);
     grid.appendChild(el);
   });
 }
-function openChat(ch){
-  alert(`(Demo) A chat UI would open with ${ch.name}.`);
-}
 
+// ---------- lore ----------
 function bindLoreUI(){
   const btn = $("newLoreBtn");
   if (btn && !btn._bound){
@@ -159,17 +211,12 @@ function renderLore(){
   });
 }
 
+// ---------- writer ----------
 function bindWriterUI(){
   const g=$("genStory"), c=$("contStory"), exp=$("exportStory");
-  if (g && !g._bound){
-    g._bound=true; g.onclick = ()=> generate(false);
-  }
-  if (c && !c._bound){
-    c._bound=true; c.onclick = ()=> generate(true);
-  }
-  if (exp && !exp._bound){
-    exp._bound=true; exp.onclick = ()=> downloadTxt($("storyOut").textContent, `story-${new Date().toISOString().slice(0,10)}.txt`);
-  }
+  if (g && !g._bound){ g._bound=true; g.onclick = ()=> generate(false); }
+  if (c && !c._bound){ c._bound=true; c.onclick = ()=> generate(true); }
+  if (exp && !exp._bound){ exp._bound=true; exp.onclick = ()=> downloadTxt($("storyOut").textContent, `story-${new Date().toISOString().slice(0,10)}.txt`); }
 }
 async function generate(continuation){
   await ensureEngine();
@@ -212,9 +259,9 @@ async function generate(continuation){
   else out.textContent = content || "[No content returned]";
 }
 
+// ---------- settings ----------
 function bindSettingsUI(){
   const m=$("modelSel"), t=$("temp"), tn=$("tempNum"), mx=$("maxTok"), mxn=$("maxTokNum"), gs=$("globalStyle"), sv=$("saveSettings");
-
   if (m) m.value = settings.model;
   if (t) t.value = settings.temp;
   if (tn) tn.value = settings.temp;
@@ -234,7 +281,6 @@ function bindSettingsUI(){
     mx.addEventListener("input", e=> sync(e.target.value));
     mxn.addEventListener("input", e=> sync(e.target.value));
   }
-
   if (sv && !sv._bound){
     sv._bound = true;
     sv.onclick = ()=>{
@@ -249,5 +295,5 @@ function bindSettingsUI(){
   }
 }
 
+// ---------- utils ----------
 function downloadTxt(text, name){ const blob=new Blob([text],{type:"text/plain"}); const url=URL.createObjectURL(blob); const a=document.createElement("a"); a.href=url; a.download=name; a.click(); URL.revokeObjectURL(url); }
-function hexToRgba(hex, a){ try{ const m=hex.replace("#",""); const i=parseInt(m,16); const r=(i>>16)&255, g=(i>>8)&255, b=i&255; return `rgba(${r},${g},${b},${a})`; }catch{ return "rgba(0,0,0,0.2)"; } }

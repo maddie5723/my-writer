@@ -14,35 +14,51 @@
     --panel-2:#171b1c;
     --text:#e9ecef;
     --muted:#a9b2b9;
-    --accent:#739c80;
-    --accent-2:#3d5a49;
-    --gold:#e9c46a;
+    --accent:#739c80;       /* sage */
+    --accent-2:#3d5a49;     /* dark sage */
+    --gold:#e9c46a;         /* gold accent */
     --radius:16px;
     --shadow:0 10px 30px rgba(0,0,0,.35);
     --font-ui:"Inter",system-ui,Segoe UI,Roboto,Arial,sans-serif;
     --font-serif:"Playfair Display",Georgia,serif;
   }
+  [data-theme="light"]{
+    --bg:#f6f7f6;
+    --panel:#ffffff;
+    --panel-2:#f2f4f3;
+    --text:#1a1d1f;
+    --muted:#616b70;
+    --accent:#6c9a80;
+    --accent-2:#3b5847;
+    --gold:#c59b35;
+  }
   *{box-sizing:border-box}
   html,body{height:100%}
   body{margin:0;background:var(--bg);color:var(--text);font-family:var(--font-ui)}
-  a{color:inherit}
   .app{display:grid;grid-template-rows:auto 1fr auto;min-height:100%}
+
+  /* Header */
   .header{display:flex;align-items:center;gap:12px;padding:14px 16px;border-bottom:1px solid #232b24;background:linear-gradient(180deg,rgba(0,0,0,.06),transparent)}
   .menuBtn{width:36px;height:36px;border-radius:10px;border:1px solid #2a322b;background:var(--panel-2);display:grid;place-items:center;cursor:pointer}
   .menuBtn svg{width:20px;height:20px}
   .title{font-weight:800}
+
+  /* Drawer */
   dialog#menuDrawer{width:min(420px,94vw);padding:0;border:1px solid #2a322b;background:var(--panel);color:var(--text);border-radius:16px}
   dialog#menuDrawer::backdrop{background:rgba(0,0,0,.5)}
   .drawer{padding:16px}
-  .avatar{width:56px;height:56px;border-radius:50%;background:var(--accent);box-shadow:0 0 16px rgba(115,156,128,.4)}
+  .avatar{width:56px;height:56px;border-radius:50%;background:var(--accent) center/cover no-repeat;box-shadow:0 0 16px rgba(115,156,128,.4)}
   .mood{font-size:12px;color:var(--muted)}
   .rotate{animation:fadeSlide 8s infinite ease-in-out}
   @keyframes fadeSlide{0%{opacity:0;transform:translateY(6px)}10%{opacity:1;transform:none}80%{opacity:1}100%{opacity:0;transform:translateY(-6px)}}
   .drawer .quick{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-top:12px}
   .qbtn{appearance:none;border:1px solid #2a322b;background:var(--panel-2);color:var(--text);padding:10px;border-radius:12px;text-align:center}
-  .nav{display:none!important}
+
+  /* Pages */
   .page{display:none;padding:16px}
   .page.active{display:block}
+
+  /* Home tiles */
   .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin:6px 0 12px}
   .tile{position:relative;border:1px solid #2a322b;background:var(--panel);border-radius:18px;padding:18px;box-shadow:var(--shadow);cursor:pointer;overflow:hidden}
   .tile .label{font-weight:800}
@@ -50,6 +66,7 @@
   @keyframes shimmer{0%{left:-120%}50%{left:200%}100%{left:200%}}
   .tile:active{transform:translateY(1px)}
   .card{border:1px solid #2a322b;background:var(--panel);border-radius:16px;padding:12px}
+
   input[type="text"], input[type="number"], textarea, select{
     width:100%;padding:10px;border-radius:12px;border:1px solid #2a322b;background:var(--panel-2);color:var(--text);outline:none;
   }
@@ -59,15 +76,33 @@
   .btn{appearance:none;border:0;border-radius:12px;padding:10px 14px;font-weight:700;color:#111;background:var(--gold);cursor:pointer}
   .ghost{appearance:none;border:1px solid #2a322b;background:transparent;color:var(--muted);border-radius:12px;padding:10px 14px;cursor:pointer}
   .hint{font-size:12px;color:var(--muted)}
+
+  /* Bottom dock nav */
   .dock{position:sticky;bottom:0;left:0;right:0;background:var(--panel);border-top:1px solid #2a322b;backdrop-filter:saturate(120%) blur(6px);z-index:5}
   .dockInner{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;padding:10px}
   .dock button{appearance:none;border:1px solid #2a322b;background:var(--panel-2);color:var(--text);padding:10px;border-radius:12px;cursor:pointer}
   .dock button.active{border-color:var(--accent);box-shadow:0 0 0 2px rgba(115,156,128,.25)}
-  #storyOut{white-space:pre-wrap;margin-top:8px}
+
+  /* Character grid card look */
+  .charCard{display:flex;align-items:flex-start;gap:12px}
+  .charCard .pic{width:44px;height:44px;border-radius:12px;background:#243027 center/cover no-repeat;border:1px solid #2a322b;flex:0 0 auto}
+  .charCard .meta{flex:1}
+  .charCard .meta .name{font-weight:800}
+  .charCard .meta .tags{font-size:12px;color:var(--muted)}
+
+  /* Modal for character create/edit */
+  dialog#charModal{width:min(560px,96vw);padding:0;border:1px solid #2a322b;background:var(--panel);color:var(--text);border-radius:16px}
+  dialog#charModal::backdrop{background:rgba(0,0,0,.5)}
+  .modalBody{padding:16px;display:grid;gap:10px}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .switchRow{display:flex;align-items:center;gap:10px}
+  .switchRow input[type="checkbox"]{width:18px;height:18px}
+
 </style>
 </head>
 <body>
 <div class="app" id="app">
+  <!-- Header -->
   <div class="header">
     <button class="menuBtn" id="menuBtn" title="Menu">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -77,6 +112,7 @@
     <div class="title" id="profileName">My Writer</div>
   </div>
 
+  <!-- Drawer -->
   <dialog id="menuDrawer">
     <div class="drawer">
       <div class="row">
@@ -98,6 +134,41 @@
     </div>
   </dialog>
 
+  <!-- Character Create/Edit Modal -->
+  <dialog id="charModal">
+    <form method="dialog" class="modalBody">
+      <div class="row">
+        <b id="charModalTitle">New Character</b>
+        <div class="grow"></div>
+        <button class="ghost" id="charCancel">Close</button>
+      </div>
+      <div class="grid2">
+        <input id="chName" placeholder="Name (required)" />
+        <input id="chTags" placeholder="Tags, comma-separated (e.g., hunter, sarcastic)" />
+      </div>
+      <input id="chAvatar" placeholder="Avatar image URL (optional)" />
+      <div class="grid2">
+        <input id="chSpeech" placeholder="Speech style (e.g., dry sarcasm, gentle, formal)" />
+        <input id="chPersonality" placeholder="Personality (e.g., protective, hot-headed, loyal)" />
+      </div>
+      <textarea id="chAppearance" placeholder="Appearance details (height, build, eyes, hair, tattoos, etc.)"></textarea>
+      <textarea id="chBoundaries" placeholder="Boundaries (consensual adults 21+, language okay, limits, etc.)"></textarea>
+      <div class="switchRow">
+        <label><input type="checkbox" id="chAdult" /> All scenarios involve adults 21+</label>
+      </div>
+      <div class="switchRow">
+        <label><input type="checkbox" id="chPrivate" checked/> Private (only you can edit)</label>
+        <label><input type="checkbox" id="chShareRO" /> Shareable as read-only template</label>
+      </div>
+      <div class="row">
+        <div class="grow"></div>
+        <button class="ghost" id="charDelete" style="display:none">Delete</button>
+        <button class="btn" id="charSave">Save</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- PAGES -->
   <section class="page active" data-page="home">
     <div class="tiles" id="homeTiles"></div>
     <div class="hint">Long‑press a tile to rename or recolor.</div>
@@ -144,7 +215,7 @@
     </div>
     <div class="card">
       <b>Output</b>
-      <div id="storyOut"></div>
+      <div id="storyOut" style="white-space:pre-wrap;margin-top:8px"></div>
     </div>
   </section>
 
@@ -207,6 +278,7 @@
     </div>
   </section>
 
+  <!-- Bottom dock nav -->
   <nav class="dock">
     <div class="dockInner">
       <button class="dockBtn active" data-page="home">Home</button>
@@ -220,6 +292,6 @@
 </div>
 
 <script src="https://esm.run/@mlc-ai/web-llm"></script>
-<script type="module" src="main.js?v=10"></script>
+<script type="module" src="main.js?v=11"></script>
 </body>
 </html>
