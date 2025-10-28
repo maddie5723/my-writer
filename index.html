@@ -1,67 +1,156 @@
 <!doctype html>
-<html>
+<html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>My Private Writer</title>
-  <style>
-    :root { font-family: -apple-system, system-ui; }
-    body { padding: 16px; max-width: 900px; margin: 0 auto; }
-    textarea { width: 100%; min-height: 120px; }
-    .row { display: grid; gap: 12px; }
-    @media (min-width: 720px){ .row { grid-template-columns: 1fr 1fr; } }
-    label { font-size: 14px; opacity: .8; display:block; margin: 6px 0; }
-    select, input[type="range"], button { width: 100%; padding: 10px; }
-    #out { white-space: pre-wrap; margin-top: 14px; border: 1px solid #ddd; padding: 12px; border-radius: 8px; min-height: 120px; }
-    .inline { display:flex; gap:10px; align-items:center; }
-    small { opacity:.7 }
-  </style>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>My Writer</title>
+<style>
+  :root{
+    --bg:#0f0f12;         /* page background (dark) */
+    --panel:#17171c;      /* panels / bubbles base */
+    --panel-2:#1f1f26;    /* alt panel */
+    --text:#e9e9ee;       /* primary text */
+    --muted:#a8a8b3;      /* secondary text */
+    --accent:#ff4da6;     /* pink! tweak here */
+    --accent-2:#ffc3e0;   /* soft pink for gradients/badges */
+    --radius:16px;
+    --shadow:0 6px 22px rgba(0,0,0,.35);
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{
+    margin:0; background:linear-gradient(180deg,#0e0e12, #121218 30%, #0f0f12 100%);
+    color:var(--text); font-family:-apple-system,system-ui,Segoe UI,Roboto,Inter,sans-serif;
+  }
+  .app{display:flex; flex-direction:column; height:100%}
+  .topbar{
+    position:sticky; top:0; z-index:10;
+    display:flex; align-items:center; gap:10px;
+    padding:14px 16px; background:rgba(15,15,18,.7); backdrop-filter: blur(8px);
+    border-bottom:1px solid #22232b;
+  }
+  .dot{width:10px;height:10px;border-radius:50%;background:var(--accent);box-shadow:0 0 20px var(--accent)}
+  .title{font-weight:700}
+  .pill{margin-left:auto; font-size:12px; color:#111; background:var(--accent-2); padding:6px 10px; border-radius:999px}
+  .gear{appearance:none;border:0;background:var(--panel-2);color:var(--text); padding:8px 12px;border-radius:10px}
+  .gear:active{transform:scale(.97)}
+
+  .chat{flex:1; overflow:auto; padding:14px 12px 120px; scroll-behavior:smooth}
+  .msg{display:flex; margin:12px 0}
+  .msg .bubble{
+    max-width:86%; padding:12px 14px; border-radius:14px; line-height:1.35;
+    background:var(--panel); box-shadow:var(--shadow); border:1px solid #24242c;
+    white-space:pre-wrap;
+  }
+  .me{justify-content:flex-end}
+  .me .bubble{
+    background:linear-gradient(160deg,#241421, #2b1927);
+    border:1px solid #3a2032;
+  }
+  .bot .bubble{
+    border-left:3px solid var(--accent);
+  }
+  .muted{color:var(--muted); font-size:12px}
+
+  .composer{
+    position:fixed; left:0; right:0; bottom:0; z-index:20;
+    background:linear-gradient(180deg,transparent,rgba(15,15,18,.8) 20%, rgba(15,15,18,.95) 60%);
+    padding:10px 10px 16px;
+  }
+  .composer .bar{
+    display:flex; gap:10px; align-items:flex-end; background:var(--panel-2);
+    border:1px solid #262733; border-radius:18px; padding:10px;
+  }
+  textarea{
+    flex:1; resize:none; border:0; outline:none; color:var(--text); background:transparent;
+    max-height:150px; min-height:44px; font-size:16px;
+  }
+  .btn{
+    appearance:none; border:0; color:#111; background:var(--accent);
+    padding:10px 14px; border-radius:12px; font-weight:700;
+    box-shadow:0 6px 18px rgba(255,77,166,.35);
+  }
+  .btn:active{transform:translateY(1px)}
+  .row{display:flex; gap:8px; margin-top:8px}
+  .ghost{background:transparent; color:var(--muted); border:1px solid #2a2b36}
+  .status{padding:6px 2px 0 2px; color:var(--muted); font-size:12px}
+
+  /* Settings drawer */
+  dialog{
+    width:min(720px,92vw); border:1px solid #2a2b36; background:var(--panel);
+    border-radius:var(--radius); color:var(--text); box-shadow:var(--shadow);
+  }
+  dialog::backdrop{background:rgba(0,0,0,.55)}
+  .sheet{padding:16px}
+  .sheet h3{margin:0 0 8px}
+  .grid{display:grid; gap:10px}
+  @media (min-width:740px){ .grid{grid-template-columns:1fr 1fr} }
+  select,input[type=range]{width:100%}
+  .small{font-size:12px; color:var(--muted)}
+  .save{margin-top:8px}
+</style>
 </head>
 <body>
-  <h2>My Private Writer (On-Device)</h2>
-  <p><small>Everything runs in your browser on this device. First load downloads a small model; then it works offline.</small></p>
+<div class="app">
+  <div class="topbar">
+    <div class="dot"></div>
+    <div class="title">My Writer</div>
+    <div id="statusPill" class="pill">Idle</div>
+    <button id="openSettings" class="gear">⚙︎ Settings</button>
+  </div>
 
-  <label>Model</label>
-  <select id="model">
-    <!-- Keep these small; you can add others later if supported by your device -->
-    <option value="Llama-3.2-1B-Instruct-q4f32_1-MLC">Llama 3.2 1B (tiny, fast)</option>
-    <option value="Llama-3-8B-Instruct-q4f16_1-MLC">Llama 3 8B (bigger, slower)</option>
-  </select>
+  <div id="chat" class="chat">
+    <div class="msg bot"><div class="bubble">Hi! I’m your private on-device writing buddy. Set your style in ⚙︎ and start a scene whenever you’re ready.</div></div>
+  </div>
 
-  <div class="row">
-    <div>
-      <label>System style (tone/rules)</label>
-      <textarea id="system" placeholder="Describe voice & boundaries"></textarea>
-      <div class="inline">
-        <label style="flex:1">Temperature <small id="tval">0.9</small></label>
+  <div class="composer">
+    <div class="bar">
+      <textarea id="prompt" placeholder="Write your line, scene, or direction…"></textarea>
+      <button id="send" class="btn">Send</button>
+    </div>
+    <div class="row">
+      <button id="cont" class="ghost">Continue</button>
+      <button id="clear" class="ghost">Clear</button>
+    </div>
+    <div id="status" class="status"></div>
+  </div>
+</div>
+
+<!-- Settings Drawer -->
+<dialog id="settings">
+  <div class="sheet">
+    <h3>Style & Memory</h3>
+    <div class="grid">
+      <div>
+        <label class="small">Model</label>
+        <select id="model">
+          <option value="Llama-3.2-1B-Instruct-q4f32_1-MLC">Llama 3.2 1B (fast)</option>
+          <option value="Llama-3-8B-Instruct-q4f16_1-MLC">Llama 3 8B (richer)</option>
+        </select>
+      </div>
+      <div>
+        <label class="small">Temperature: <span id="tval">0.9</span></label>
         <input id="temp" type="range" min="0" max="1.5" step="0.05" value="0.9" />
       </div>
-      <div class="inline">
-        <label style="flex:1">Max tokens <small id="mval">512</small></label>
+      <div>
+        <label class="small">Max tokens: <span id="mval">512</span></label>
         <input id="maxToks" type="range" min="64" max="2048" step="64" value="512" />
       </div>
     </div>
-    <div>
-      <label>Memory (characters, world notes, preferences)</label>
-      <textarea id="memory" placeholder="Names, traits, dynamics, ongoing plot beats…"></textarea>
-      <button id="save">Save settings (local only)</button>
-    </div>
+
+    <label class="small" style="display:block;margin-top:10px">System style (tone/rules)</label>
+    <textarea id="system" style="width:100%;min-height:100px;"></textarea>
+
+    <label class="small" style="display:block;margin-top:10px">Memory (characters, notes, ongoing beats)</label>
+    <textarea id="memory" style="width:100%;min-height:100px;"></textarea>
+
+    <button id="save" class="btn save">Save (local only)</button>
+    <button id="closeSettings" class="gear" style="margin-left:8px">Close</button>
   </div>
+</dialog>
 
-  <label>Your prompt</label>
-  <textarea id="prompt" placeholder="Describe the scene…"></textarea>
-
-  <div class="inline">
-    <button id="go">Generate</button>
-    <button id="cont">Continue</button>
-    <button id="clear">Clear output</button>
-  </div>
-
-  <div id="status"></div>
-  <div id="out"></div>
-
-  <!-- On-device runtime -->
-  <script src="https://esm.run/@mlc-ai/web-llm"></script>
-  <script type="module" src="main.js"></script>
+<!-- On-device runtime -->
+<script src="https://esm.run/@mlc-ai/web-llm"></script>
+<script type="module" src="main.js"></script>
 </body>
 </html>
