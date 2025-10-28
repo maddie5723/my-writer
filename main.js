@@ -643,3 +643,30 @@ function hexToRgba(hex, alpha){
     return `rgba(${r},${g},${b},${alpha})`;
   }catch{ return "rgba(0,0,0,0.2)";}
 }
+// Drawer open/close
+const menuBtn = document.getElementById('menuBtn');
+const drawer = document.getElementById('menuDrawer');
+
+if (menuBtn && drawer) {
+  menuBtn.onclick = () => {
+    const p = (typeof getActiveProfile === 'function' && getActiveProfile()) || {name:'You', colors:{accent:'#739c80'}};
+    const nameEl = document.getElementById('drawerName');
+    const avEl = document.getElementById('drawerAvatar');
+    if (nameEl) nameEl.textContent = p.name || 'You';
+    if (avEl) avEl.style.background = (p.colors && p.colors.accent) || '#739c80';
+    drawer.showModal();
+  };
+
+  const closeBtn = document.getElementById('closeDrawer');
+  if (closeBtn) closeBtn.onclick = () => drawer.close();
+
+  document.querySelectorAll('.qbtn').forEach(b=>{
+    b.addEventListener('click', () => {
+      drawer.close();
+      const target = b.dataset.jump;
+      const tab = document.querySelector(`.tab[data-page='${target}']`);
+      if (tab) tab.click();
+    });
+  });
+}
+
