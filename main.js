@@ -1,124 +1,149 @@
 import { CreateMLCEngine } from "https://esm.run/@mlc-ai/web-llm";
 
-const ui = {
-  model: document.getElementById("model"),
-  system: document.getElementById("system"),
-  memory: document.getElementById("memory"),
-  temp: document.getElementById("temp"),
-  tval: document.getElementById("tval"),
-  maxToks: document.getElementById("maxToks"),
-  mval: document.getElementById("mval"),
-  prompt: document.getElementById("prompt"),
-  go: document.getElementById("go"),
-  cont: document.getElementById("cont"),
-  clear: document.getElementById("clear"),
-  status: document.getElementById("status"),
-  out: document.getElementById("out"),
-  save: document.getElementById("save"),
-};
+const $ = (id) => document.getElementById(id);
+const chatEl = $("chat");
+const promptEl = $("prompt");
+const sendBtn = $("send");
+const contBtn = $("cont");
+const clearBtn = $("clear");
+const statusEl = $("status");
+const statusPill = $("statusPill");
+
+const dlg = $("settings");
+const openSettings = $("openSettings");
+const closeSettings = $("closeSettings");
+const modelSel = $("model");
+const sysEl = $("system");
+const memEl = $("memory");
+const tempEl = $("temp");
+const maxEl = $("maxToks");
+const tval = $("tval");
+const mval = $("mval");
+const saveBtn = $("save");
 
 let engine = null;
-let history = [];     // chat history to keep continuity
-let lastStop = false; // track if we hit end naturally
+let history = [];
 
-// defaults + load saved
-(function initDefaults(){
-  const saved = JSON.parse(localStorage.getItem("writer_prefs") || "{}");
-  ui.system.value = saved.system ?? `You are a private fiction assistant.
-Write only fictional content between clearly adult characters (21+), fully consensual.
+function bubble(role, text) {
+  const msg = document.createElement("div");
+  msg.className = `msg ${role}`;
+  const b = document.createElement("div");
+  b.className = "bubble";
+  b.textContent = text;
+  msg.appendChild(b);
+  chatEl.appendChild(msg);
+  chatEl.scrollTop = chatEl.scrollHeight;
+  return b;
+}
+
+// defaults + saved prefs
+(function initPrefs(){
+  const saved = JSON.parse(localStorage.getItem("writer_prefs_v2") || "{}");
+  sysEl.value = saved.system ?? `You are a private fiction assistant. Only fictional, consensual content between clearly adult characters (21+).
 Style: slow-burn, realistic dialogue, cinematic detail, sensory cues, minimal em dashes.`;
-  ui.memory.value = saved.memory ?? "";
-  ui.temp.value = saved.temp ?? 0.9;
-  ui.maxToks.value = saved.maxToks ?? 512;
-  ui.tval.textContent = ui.temp.value;
-  ui.mval.textContent = ui.maxToks.value;
-  if (saved.model) ui.model.value = saved.model;
+  memEl.value = saved.memory ?? "";
+  tempEl.value = saved.temp ?? 0.9;
+  maxEl.value = saved.maxToks ?? 512;
+  tval.textContent = tempEl.value;
+  mval.textContent = maxEl.value;
+  if (saved.model) modelSel.value = saved.model;
 })();
 
-ui.temp.oninput = () => ui.tval.textContent = ui.temp.value;
-ui.maxToks.oninput = () => ui.mval.textContent = ui.maxToks.value;
+tempEl.oninput = () => (tval.textContent = tempEl.value);
+maxEl.oninput = () => (mval.textContent = maxEl.value);
 
-ui.save.onclick = () => {
-  localStorage.setItem("writer_prefs", JSON.stringify({
-    model: ui.model.value,
-    system: ui.system.value,
-    memory: ui.memory.value,
-    temp: parseFloat(ui.temp.value),
-    maxToks: parseInt(ui.maxToks.value,10),
+saveBtn.onclick = () => {
+  localStorage.setItem("writer_prefs_v2", JSON.stringify({
+    model: modelSel.value,
+    system: sysEl.value,
+    memory: memEl.value,
+    temp: parseFloat(tempEl.value),
+    maxToks: parseInt(maxEl.value,10),
   }));
-  ui.status.textContent = "Saved locally ✅";
-  setTimeout(()=> ui.status.textContent="", 1500);
+  statusEl.textContent = "Saved locally ✅";
+  setTimeout(()=>statusEl.textContent="",1200);
 };
 
-ui.clear.onclick = () => { ui.out.textContent = ""; history = []; };
+openSettings.onclick = () => dlg.showModal();
+closeSettings.onclick = () => dlg.close();
+modelSel.onchange = () => { engine = null; statusPill.textContent = "Model switched"; };
 
 async function ensureEngine() {
   if (engine) return;
-  ui.status.textContent = "Loading model (first time only)…";
-  engine = await CreateMLCEngine(ui.model.value, {
+  statusEl.textContent = "Loading model (first time only)…";
+  statusPill.textContent = "Loading…";
+  engine = await CreateMLCEngine(modelSel.value, {
     initProgressCallback: (p) => {
-      ui.status.textContent = `Loading: ${Math.round(p.progress*100)}%`;
+      const pct = Math.round((p.progress || 0) * 100);
+      statusEl.textContent = `Loading: ${pct}%`;
+      statusPill.textContent = `Loading ${pct}%`;
     },
   });
-  ui.status.textContent = "Ready.";
+  statusEl.textContent = "Ready.";
+  statusPill.textContent = "Ready";
 }
 
-async function generate(userText, {append=true} = {}) {
+async function generate(userText, {append=false}={}) {
   await ensureEngine();
 
-  const sys = ui.system.value.trim();
-  const mem = ui.memory.value.trim();
-  const temperature = parseFloat(ui.temp.value);
-  const max_tokens = parseInt(ui.maxToks.value, 10);
+  const sys = sysEl.value.trim();
+  const mem = memEl.value.trim();
+  const temperature = parseFloat(tempEl.value);
+  const max_tokens = parseInt(maxEl.value, 10);
 
-  const msgs = [];
-  if (sys) msgs.push({ role: "system", content: sys });
-  if (mem) msgs.push({ role: "system", content: `Memory:\n${mem}` });
+  const messages = [];
+  if (sys) messages.push({ role: "system", content: sys });
+  if (mem) messages.push({ role: "system", content: `Memory:\n${mem}` });
+  messages.push(...history);
+  messages.push({ role: "user", content: userText });
 
-  // include prior turns for continuity
-  msgs.push(...history);
+  const u = bubble("me", userText);
+  u.scrollIntoView({behavior:"smooth",block:"end"});
 
-  // add the new user prompt
-  msgs.push({ role: "user", content: userText });
-
-  ui.out.textContent = append ? ui.out.textContent : "";
-  ui.status.textContent = "Thinking…";
-  lastStop = false;
+  const aBubble = bubble("bot", "");
+  statusEl.textContent = "Thinking…";
+  statusPill.textContent = "Thinking…";
 
   const stream = await engine.chat.completions.create({
-    messages: msgs,
-    stream: true,
-    temperature,
-    top_p: 0.92,
-    max_tokens,
+    messages, stream: true,
+    temperature, top_p: 0.92, max_tokens
   });
 
   let acc = "";
   for await (const chunk of stream) {
     const delta = chunk?.choices?.[0]?.delta?.content || "";
     acc += delta;
-    ui.out.textContent += delta;
+    aBubble.textContent += delta;
+    chatEl.scrollTop = chatEl.scrollHeight;
   }
 
-  ui.status.textContent = "Done.";
+  statusEl.textContent = "Done.";
+  statusPill.textContent = "Idle";
   history.push({ role: "user", content: userText });
   history.push({ role: "assistant", content: acc });
 }
 
-ui.go.onclick = async () => {
-  const prompt = ui.prompt.value.trim();
-  if (!prompt) return;
-  await generate(prompt, { append: false });
+sendBtn.onclick = async () => {
+  const text = promptEl.value.trim();
+  if (!text) return;
+  promptEl.value = "";
+  await generate(text);
 };
 
-// “Continue” asks the model to keep going based on the last exchange
-ui.cont.onclick = async () => {
-  if (history.length === 0) return;
-  await generate("Continue the last scene.", { append: true });
+contBtn.onclick = async () => {
+  if (!history.length) return;
+  await generate("Continue the last scene.");
 };
 
-// swap model live (clears loaded engine)
-ui.model.onchange = () => {
-  engine = null; // force re-init with new model
-  ui.status.textContent = "Model switched. Will load on next generate.";
+clearBtn.onclick = () => {
+  chatEl.innerHTML = "";
+  history = [];
+  bubble("bot", "Cleared. Ready when you are ✨");
+  statusEl.textContent = "";
+  statusPill.textContent = "Idle";
 };
+
+// allow Cmd+Enter to send on hardware keyboards
+document.addEventListener("keydown",(e)=>{
+  if ((e.metaKey || e.ctrlKey) && e.key === "Enter") sendBtn.click();
+});
