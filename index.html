@@ -83,7 +83,62 @@
   .btn{appearance:none;border:0;border-radius:12px;padding:10px 14px;font-weight:700;color:#111;background:var(--gold)}
   .ghost{appearance:none;border:1px solid #2a322b;background:transparent;color:var(--muted);border-radius:12px;padding:10px 14px}
   .pill{font-size:12px;background:rgba(115,156,128,.25);color:var(--text);padding:6px 10px;border-radius:999px;border:1px solid #2a322b}
-  .hint{font-size:12px;color:var(--muted)}
+  .hint{font-size:12px;color:var(--muted)}/* === MENU DRAWER STYLES === */
+.menuBtn {
+  width:36px;
+  height:36px;
+  border-radius:10px;
+  border:1px solid #2a322b;
+  background:var(--panel-2);
+  display:grid;
+  place-items:center;
+  cursor:pointer;
+}
+dialog#menuDrawer {
+  width:min(420px,94vw);
+  padding:0;
+  border:1px solid #2a322b;
+  background:var(--panel);
+  color:var(--text);
+  border-radius:16px;
+}
+dialog#menuDrawer::backdrop {
+  background:rgba(0,0,0,.5);
+}
+.drawer { padding:16px; }
+.avatar {
+  width:56px;
+  height:56px;
+  border-radius:50%;
+  background:var(--accent);
+  box-shadow:0 0 16px rgba(115,156,128,.4);
+}
+.mood { font-size:12px;color:var(--muted); }
+.rotate {
+  animation:fadeSlide 8s infinite ease-in-out;
+}
+@keyframes fadeSlide {
+  0%{opacity:0;transform:translateY(6px)}
+  10%{opacity:1;transform:none}
+  80%{opacity:1}
+  100%{opacity:0;transform:translateY(-6px)}
+}
+.quick {
+  display:grid;
+  grid-template-columns:repeat(2,1fr);
+  gap:10px;
+  margin-top:12px;
+}
+.qbtn {
+  appearance:none;
+  border:1px solid #2a322b;
+  background:var(--panel-2);
+  color:var(--text);
+  padding:10px;
+  border-radius:12px;
+  text-align:center;
+}
+
 
   /* Slider with emoji knob + numeric */
   .dial{display:flex;gap:10px;align-items:center;margin:8px 0}
