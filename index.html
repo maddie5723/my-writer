@@ -190,7 +190,38 @@ dialog#menuDrawer::backdrop {
   .link{background:none;border:0;color:var(--accent);padding:0;text-decoration:underline;cursor:pointer}
 </style>
 </head>
-<body>
+<body><!-- SIMPLE HEADER -->
+<div class="header">
+  <button class="menuBtn" id="menuBtn" title="Menu">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
+      <path d="M4 6h16M4 12h16M4 18h16"/>
+    </svg>
+  </button>
+  <div class="title" id="profileName">My Writer</div>
+</div>
+
+<!-- MENU DRAWER -->
+<dialog id="menuDrawer">
+  <div class="drawer">
+    <div class="row">
+      <div class="avatar" id="drawerAvatar"></div>
+      <div>
+        <div style="font-weight:800" id="drawerName">You</div>
+        <div class="mood"><span id="moodLine" class="rotate">writing softly-lit chaos…</span></div>
+      </div>
+      <div class="grow"></div>
+      <button class="ghost" id="closeDrawer">Close</button>
+    </div>
+
+    <div class="quick">
+      <button class="qbtn" data-jump="characters">Characters</button>
+      <button class="qbtn" data-jump="writer">Story Writer</button>
+      <button class="qbtn" data-jump="lore">Lorebook</button>
+      <button class="qbtn" data-jump="profile">Profile</button>
+      <button class="qbtn" data-jump="settings">Settings</button>
+    </div>
+  </div>
+</dialog>
 <div class="app" id="app">
   <div class="header">
     <div class="avatar" id="profileAvatar"></div>
