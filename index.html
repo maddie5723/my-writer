@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>My Writer</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -14,9 +14,9 @@
     --panel-2:#171b1c;
     --text:#e9ecef;
     --muted:#a9b2b9;
-    --accent:#739c80;       /* sage */
-    --accent-2:#3d5a49;     /* dark sage */
-    --gold:#e9c46a;         /* gold accent */
+    --accent:#739c80;
+    --accent-2:#3d5a49;
+    --gold:#e9c46a;
     --radius:16px;
     --shadow:0 10px 30px rgba(0,0,0,.35);
     --font-ui:"Inter",system-ui,Segoe UI,Roboto,Arial,sans-serif;
@@ -37,61 +37,36 @@
   body{margin:0;background:var(--bg);color:var(--text);font-family:var(--font-ui)}
   a{color:inherit}
   .app{display:grid;grid-template-rows:auto 1fr auto;min-height:100%}
-/* header basics (if you don’t already have them) */
-.header{display:flex;align-items:center;gap:10px;padding:10px 12px;border-bottom:1px solid #2a322b;background:var(--panel)}
-.title{font-weight:800;font-size:18px}
 
-/* menu drawer */
-.menuBtn{width:36px;height:36px;border-radius:10px;border:1px solid #2a322b;background:var(--panel-2);display:grid;place-items:center;cursor:pointer}
-dialog#menuDrawer{width:min(420px,94vw);padding:0;border:1px solid #2a322b;background:var(--panel);color:var(--text);border-radius:16px}
-dialog#menuDrawer::backdrop{background:rgba(0,0,0,.5)}
-.drawer{padding:16px}
-.avatar{width:56px;height:56px;border-radius:50%;background:var(--accent);box-shadow:0 0 16px rgba(115,156,128,.4)}
-.mood{font-size:12px;color:var(--muted)}
-.rotate{animation:fadeSlide 8s infinite ease-in-out}
-@keyframes fadeSlide{0%{opacity:0;transform:translateY(6px)}10%{opacity:1;transform:none}80%{opacity:1}100%{opacity:0;transform:translateY(-6px)}}
-.quick{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-top:12px}
-.qbtn{appearance:none;border:1px solid #2a322b;background:var(--panel-2);color:var(--text);padding:10px;border-radius:12px;text-align:center}
-
-/* quick win: hide emoji icons on tiles immediately */
-.tile .icon{display:none}
-  /* Header */
-  .header{display:flex;align-items:center;gap:12px;padding:14px 16px;border-bottom:1px solid #232b24;background:linear-gradient(180deg,rgba(0,0,0,.08),transparent)}
-  .avatar{width:36px;height:36px;border-radius:50%;background:var(--accent);box-shadow:0 0 16px rgba(115,156,128,.4)}
+  .header{display:flex;align-items:center;gap:12px;padding:14px 16px;border-bottom:1px solid #232b24;background:linear-gradient(180deg,rgba(0,0,0,.06),transparent)}
+  .menuBtn{width:36px;height:36px;border-radius:10px;border:1px solid #2a322b;background:var(--panel-2);display:grid;place-items:center;cursor:pointer}
+  .menuBtn svg{width:20px;height:20px}
   .title{font-weight:800}
-  .mood{margin-left:auto;font-size:12px;color:var(--muted)}
+
+  dialog#menuDrawer{width:min(420px,94vw);padding:0;border:1px solid #2a322b;background:var(--panel);color:var(--text);border-radius:16px}
+  dialog#menuDrawer::backdrop{background:rgba(0,0,0,.5)}
+  .drawer{padding:16px}
+  .avatar{width:56px;height:56px;border-radius:50%;background:var(--accent);box-shadow:0 0 16px rgba(115,156,128,.4)}
+  .mood{font-size:12px;color:var(--muted)}
   .rotate{animation:fadeSlide 8s infinite ease-in-out}
   @keyframes fadeSlide{0%{opacity:0;transform:translateY(6px)}10%{opacity:1;transform:none}80%{opacity:1}100%{opacity:0;transform:translateY(-6px)}}
+  .drawer .quick{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-top:12px}
+  .qbtn{appearance:none;border:1px solid #2a322b;background:var(--panel-2);color:var(--text);padding:10px;border-radius:12px;text-align:center}
 
-  /* Tabs / main nav (Home/Characters/Writer/Lore/Profile/Settings) */
-  .nav{display:flex;gap:8px;padding:10px 12px;border-bottom:1px solid #232b24;overflow:auto}
-  .tab{appearance:none;border:1px solid #2a322b;background:var(--panel-2);color:var(--text);padding:10px 12px;border-radius:12px}
-  .tab.active{border-color:var(--accent);box-shadow:0 0 0 2px rgba(115,156,128,.25)}
+  .nav{display:none!important}
 
-  /* Pages */
   .page{display:none;padding:16px}
   .page.active{display:block}
 
-  /* Home tiles */
-  .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-top:8px}
+  .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin:6px 0 12px}
   .tile{position:relative;border:1px solid #2a322b;background:var(--panel);border-radius:18px;padding:18px;box-shadow:var(--shadow);cursor:pointer;overflow:hidden}
-  .tile .icon{font-size:24px;margin-bottom:8px}
-  .tile .label{font-weight:700}
-  .tile::after{ /* shimmer */ 
-    content:"";position:absolute;left:-120%;top:-50%;width:80%;height:200%;
-    background:linear-gradient(120deg,transparent, rgba(255,255,255,.06), transparent);
-    transform:skewX(-20deg);
-    animation:shimmer 6s infinite;
-    pointer-events:none;
-  }
+  .tile .label{font-weight:800}
+  .tile::after{content:"";position:absolute;left:-120%;top:-50%;width:80%;height:200%;background:linear-gradient(120deg,transparent, rgba(255,255,255,.06), transparent);transform:skewX(-20deg);animation:shimmer 6s infinite;pointer-events:none}
   @keyframes shimmer{0%{left:-120%}50%{left:200%}100%{left:200%}}
-  .tile:active{transform:translateY(1px)} /* tiny bounce */
+  .tile:active{transform:translateY(1px)}
 
-  /* Carousel */
-  .carousel{display:flex;gap:12px;overflow:auto;padding:10px 2px}
-  .card{min-width:220px;border:1px solid #2a322b;background:var(--panel-2);border-radius:16px;padding:12px}
+  .card{border:1px solid #2a322b;background:var(--panel);border-radius:16px;padding:12px}
 
-  /* Controls / inputs */
   input[type="text"], input[type="number"], textarea, select{
     width:100%;padding:10px;border-radius:12px;border:1px solid #2a322b;background:var(--panel-2);color:var(--text);outline:none;
   }
@@ -100,480 +75,174 @@ dialog#menuDrawer::backdrop{background:rgba(0,0,0,.5)}
   .btn{appearance:none;border:0;border-radius:12px;padding:10px 14px;font-weight:700;color:#111;background:var(--gold)}
   .ghost{appearance:none;border:1px solid #2a322b;background:transparent;color:var(--muted);border-radius:12px;padding:10px 14px}
   .pill{font-size:12px;background:rgba(115,156,128,.25);color:var(--text);padding:6px 10px;border-radius:999px;border:1px solid #2a322b}
-  .hint{font-size:12px;color:var(--muted)}/* === MENU DRAWER STYLES === */
-.menuBtn {
-  width:36px;
-  height:36px;
-  border-radius:10px;
-  border:1px solid #2a322b;
-  background:var(--panel-2);
-  display:grid;
-  place-items:center;
-  cursor:pointer;
-}
-dialog#menuDrawer {
-  width:min(420px,94vw);
-  padding:0;
-  border:1px solid #2a322b;
-  background:var(--panel);
-  color:var(--text);
-  border-radius:16px;
-}
-dialog#menuDrawer::backdrop {
-  background:rgba(0,0,0,.5);
-}
-.drawer { padding:16px; }
-.avatar {
-  width:56px;
-  height:56px;
-  border-radius:50%;
-  background:var(--accent);
-  box-shadow:0 0 16px rgba(115,156,128,.4);
-}
-.mood { font-size:12px;color:var(--muted); }
-.rotate {
-  animation:fadeSlide 8s infinite ease-in-out;
-}
-@keyframes fadeSlide {
-  0%{opacity:0;transform:translateY(6px)}
-  10%{opacity:1;transform:none}
-  80%{opacity:1}
-  100%{opacity:0;transform:translateY(-6px)}
-}
-.quick {
-  display:grid;
-  grid-template-columns:repeat(2,1fr);
-  gap:10px;
-  margin-top:12px;
-}
-.qbtn {
-  appearance:none;
-  border:1px solid #2a322b;
-  background:var(--panel-2);
-  color:var(--text);
-  padding:10px;
-  border-radius:12px;
-  text-align:center;
-}
+  .hint{font-size:12px;color:var(--muted)}
 
+  .dock{position:sticky;bottom:0;left:0;right:0;background:var(--panel);border-top:1px solid #2a322b;backdrop-filter:saturate(120%) blur(6px);z-index:5}
+  .dockInner{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;padding:10px}
+  .dock button{appearance:none;border:1px solid #2a322b;background:var(--panel-2);color:var(--text);padding:10px;border-radius:12px}
+  .dock button.active{border-color:var(--accent);box-shadow:0 0 0 2px rgba(115,156,128,.25)}
 
-  /* Slider with emoji knob + numeric */
-  .dial{display:flex;gap:10px;align-items:center;margin:8px 0}
-  .dial .emoji{font-size:18px}
-  .dial input[type="range"]{flex:1; accent-color: var(--accent)}
-  .dial .num{width:70px}
-
-  /* Grids */
-  .grid{display:grid;gap:12px}
-  @media(min-width:860px){ .grid.two{grid-template-columns:1fr 1fr} .grid.three{grid-template-columns:1fr 1fr 1fr} }
-
-  /* Character cards grid */
-  .chars{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(180px,1fr))}
-  .char{border:1px solid #2a322b;background:var(--panel);border-radius:16px;padding:12px;position:relative}
-  .char .stripe{position:absolute;left:0;top:0;bottom:0;width:6px;background:var(--accent);border-top-left-radius:16px;border-bottom-left-radius:16px;box-shadow:0 0 16px rgba(115,156,128,.4)}
-  .char .avatar{width:48px;height:48px;border-radius:12px;background:#2d3432;object-fit:cover}
-  .char .name{font-weight:800;margin-top:6px}
-  .char .tags{display:flex;gap:6px;flex-wrap:wrap;margin-top:4px}
-  .tag{font-size:11px;border:1px solid #2a322b;color:var(--muted);padding:2px 6px;border-radius:999px}
-
-  /* Chat */
-  .chatWrap{display:grid;grid-template-columns:1fr;gap:12px}
-  .chatHeader{display:flex;align-items:center;gap:10px;border:1px solid #2a322b;background:var(--panel);border-radius:16px;padding:10px}
-  .chatHeader .contactAvatar{width:36px;height:36px;border-radius:10px;background:#2d3432;object-fit:cover}
   .chatArea{height:50vh;overflow:auto;border:1px solid #2a322b;background:var(--panel);border-radius:16px;padding:12px}
   .msg{display:flex;gap:10px;margin:10px 0}
   .msg.me{justify-content:flex-end}
   .bubble{max-width:80%;padding:10px 12px;border-radius:14px;background:var(--panel-2);border:1px solid #2a322b;white-space:pre-wrap;line-height:1.4}
   .me .bubble{background:linear-gradient(160deg, rgba(115,156,128,.2), rgba(61,90,73,.2));border-color:#395244}
   .meta{font-size:11px;color:var(--muted);margin-top:4px}
-  .composer{display:flex;gap:8px;align-items:flex-end}
-  .composer textarea{min-height:44px;max-height:160px}
-  .tiny{font-size:12px;color:var(--muted)}
-
-  /* Texting skin variations */
-  .texting .me .bubble{background:linear-gradient(160deg,#3c6e71,#284b63);border-color:#284b63}
-  .texting .bot .bubble{background:#232c2a;border-color:#2f3936}
-
-  /* Director layout */
-  .director{display:grid;gap:10px}
-  @media(min-width:860px){ .director{grid-template-columns:1fr 1.1fr} }
-
-  /* Dialog & modal (simple) */
-  dialog{width:min(820px,94vw);border:1px solid #2a322b;background:var(--panel);color:var(--text);border-radius:16px;box-shadow:var(--shadow);padding:0}
-  dialog::backdrop{background:rgba(0,0,0,.5)}
-  .sheet{padding:16px}
-
-  /* Minimal link buttons */
-  .link{background:none;border:0;color:var(--accent);padding:0;text-decoration:underline;cursor:pointer}
 </style>
 </head>
-<body><!-- SIMPLE HEADER -->
-<div class="header">
-  <button class="menuBtn" id="menuBtn" title="Menu">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
-      <path d="M4 6h16M4 12h16M4 18h16"/>
-    </svg>
-  </button>
-  <div class="title" id="profileName">My Writer</div>
-</div>
-
-<!-- MENU DRAWER -->
-<dialog id="menuDrawer">
-  <div class="drawer">
-    <div class="row">
-      <div class="avatar" id="drawerAvatar"></div>
-      <div>
-        <div style="font-weight:800" id="drawerName">You</div>
-        <div class="mood"><span id="moodLine" class="rotate">writing softly-lit chaos…</span></div>
-      </div>
-      <div class="grow"></div>
-      <button class="ghost" id="closeDrawer">Close</button>
-    </div>
-
-    <div class="quick">
-      <button class="qbtn" data-jump="characters">Characters</button>
-      <button class="qbtn" data-jump="writer">Story Writer</button>
-      <button class="qbtn" data-jump="lore">Lorebook</button>
-      <button class="qbtn" data-jump="profile">Profile</button>
-      <button class="qbtn" data-jump="settings">Settings</button>
-    </div>
-  </div>
-</dialog>
+<body>
 <div class="app" id="app">
   <div class="header">
-    <div class="avatar" id="profileAvatar"></div>
+    <button class="menuBtn" id="menuBtn" title="Menu">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M4 6h16M4 12h16M4 18h16" />
+      </svg>
+    </button>
     <div class="title" id="profileName">My Writer</div>
-    <div class="mood"><span id="moodLine" class="rotate">writing softly-lit chaos…</span></div>
   </div>
 
-  <div class="nav">
-    <button class="tab active" data-page="home">Home</button>
-    <button class="tab" data-page="characters">Characters</button>
-    <button class="tab" data-page="writer">Story Writer</button>
-    <button class="tab" data-page="lore">Lorebook</button>
-    <button class="tab" data-page="profile">Profile</button>
-    <button class="tab" data-page="settings">Settings</button>
-  </div>
-
-  <!-- HOME -->
-  <div class="page active" id="home">
-    <div class="grid two">
-      <div>
-        <div class="tiles" id="homeTiles"></div>
-        <div class="hint" style="margin-top:8px">Tap and hold a tile to customize its icon & color.</div>
+  <dialog id="menuDrawer">
+    <div class="drawer">
+      <div class="row">
+        <div class="avatar" id="drawerAvatar"></div>
+        <div>
+          <div style="font-weight:800" id="drawerName">You</div>
+          <div class="mood"><span id="moodLine" class="rotate">writing softly-lit chaos…</span></div>
+        </div>
+        <div class="grow"></div>
+        <button class="ghost" id="closeDrawer">Close</button>
       </div>
-      <div>
-        <div class="row"><b>Recents</b><span class="pill" id="pill">Idle</span></div>
-        <div class="carousel" id="recents"></div>
+      <div class="quick">
+        <button class="qbtn" data-jump="characters">Characters</button>
+        <button class="qbtn" data-jump="writer">Story Writer</button>
+        <button class="qbtn" data-jump="lore">Lorebook</button>
+        <button class="qbtn" data-jump="profile">Profile</button>
+        <button class="qbtn" data-jump="settings">Settings</button>
       </div>
     </div>
-  </div>
+  </dialog>
 
-  <!-- CHARACTERS -->
-  <div class="page" id="characters">
+  <section class="page active" data-page="home">
+    <div class="tiles" id="homeTiles"></div>
+    <div class="hint">Long‑press a tile to rename or recolor.</div>
+  </section>
+
+  <section class="page" data-page="characters">
     <div class="row" style="margin-bottom:8px">
       <b>Characters</b>
       <div class="grow"></div>
       <button class="btn" id="newCharBtn">+ New Character</button>
     </div>
-    <div class="chars" id="charGrid"></div>
-  </div>
+    <div id="charGrid" class="tiles"></div>
+  </section>
 
-  <!-- WRITER -->
-  <div class="page" id="writer">
-    <div class="grid two">
-      <div class="card">
-        <div class="row"><b>Story Controls</b><span class="grow"></span><button class="ghost" id="exportStory">Export .txt</button></div>
-        <div class="grid">
-          <input id="storyTitle" placeholder="Title (optional)" />
-          <div class="row">
-            <select id="pov">
-              <option value="second">2nd person</option>
-              <option value="first">1st person</option>
-              <option value="third">3rd person</option>
-            </select>
-            <select id="tense">
-              <option value="past">Past</option>
-              <option value="present">Present</option>
-            </select>
-            <input id="length" type="number" min="100" max="5000" step="50" value="800" title="Target words" />
-          </div>
-          <div>
-            <label class="tiny">Style preset</label>
-            <input id="styleName" placeholder="Name your preset (you control presets)" />
-            <textarea id="styleText" placeholder="Your style/system text…"></textarea>
-          </div>
-
-          <div class="grid two">
-            <div>
-              <label class="tiny">Beats / Outline</label>
-              <textarea id="beats" placeholder="Optional outline to follow…"></textarea>
-            </div>
-            <div>
-              <label class="tiny">Sliders</label>
-              <div class="dial"><span class="emoji">❤️</span><span class="tiny">less spice</span>
-                <input type="range" id="heat" min="0" max="10" step="0.5" value="5">
-                <span class="tiny">more spice</span>
-                <input class="num" id="heatNum" type="number" min="0" max="10" step="0.5" value="5">
-              </div>
-              <div class="dial"><span class="emoji">🧭</span><span class="tiny">stylized</span>
-                <input type="range" id="realism" min="0" max="10" step="0.5" value="5">
-                <span class="tiny">documentary</span>
-                <input class="num" id="realismNum" type="number" min="0" max="10" step="0.5" value="5">
-              </div>
-              <div class="dial"><span class="emoji">🗡️</span><span class="tiny">implied</span>
-                <input type="range" id="violence" min="0" max="10" step="0.5" value="3">
-                <span class="tiny">graphic</span>
-                <input class="num" id="violenceNum" type="number" min="0" max="10" step="0.5" value="3">
-              </div>
-              <div class="dial"><span class="emoji">✨</span><span class="tiny">literal</span>
-                <input type="range" id="creativity" min="0" max="10" step="0.5" value="6">
-                <span class="tiny">imaginative</span>
-                <input class="num" id="creativityNum" type="number" min="0" max="10" step="0.5" value="6">
-              </div>
-            </div>
-          </div>
-          <div class="row">
-            <button class="btn" id="genStory">Generate</button>
-            <button class="ghost" id="contStory">Continue</button>
-          </div>
-        </div>
+  <section class="page" data-page="writer">
+    <div class="row" style="margin-bottom:8px">
+      <b>Story Writer</b>
+      <div class="grow"></div>
+      <button class="ghost" id="exportStory">Export .txt</button>
+    </div>
+    <div class="card" style="margin-bottom:12px">
+      <div class="row">
+        <input id="storyTitle" placeholder="Title (optional)" />
+        <select id="pov">
+          <option value="second">2nd person</option>
+          <option value="first">1st person</option>
+          <option value="third">3rd person</option>
+        </select>
+        <select id="tense">
+          <option value="past">Past</option>
+          <option value="present">Present</option>
+        </select>
+        <input id="length" type="number" min="100" max="5000" step="50" value="800" title="Target words" />
       </div>
-      <div class="card">
-        <b>Output</b>
-        <div id="storyOut" style="white-space:pre-wrap;margin-top:8px"></div>
+      <textarea id="beats" placeholder="Optional outline to follow…"></textarea>
+      <div class="row">
+        <label class="hint">Heat</label><input id="heat" type="range" min="0" max="10" step="0.5" value="5">
+        <label class="hint">Realism</label><input id="realism" type="range" min="0" max="10" step="0.5" value="5">
+        <label class="hint">Violence</label><input id="violence" type="range" min="0" max="10" step="0.5" value="3">
+        <label class="hint">Creativity</label><input id="creativity" type="range" min="0" max="10" step="0.5" value="6">
+        <button class="btn" id="genStory">Generate</button>
+        <button class="ghost" id="contStory">Continue</button>
       </div>
     </div>
-  </div>
+    <div class="card">
+      <b>Output</b>
+      <div id="storyOut" style="white-space:pre-wrap;margin-top:8px"></div>
+    </div>
+  </section>
 
-  <!-- LOREBOOK -->
-  <div class="page" id="lore">
+  <section class="page" data-page="lore">
     <div class="row" style="margin-bottom:8px">
       <b>Lorebook</b>
       <div class="grow"></div>
       <button class="btn" id="newLoreBtn">+ New Entry</button>
     </div>
-    <div id="loreList" class="grid"></div>
-  </div>
+    <div id="loreList" class="tiles"></div>
+  </section>
 
-  <!-- PROFILE -->
-  <div class="page" id="profile">
-    <div class="grid two">
-      <div class="card">
-        <b>Profile</b>
-        <div class="grid">
-          <input id="profName" placeholder="Display name" />
-          <textarea id="profBio" placeholder="Bio (markdown allowed)…"></textarea>
-          <div class="row">
-            <label class="tiny">Theme</label>
-            <select id="themeSel">
-              <option value="dark">Dark</option>
-              <option value="light">Light</option>
-            </select>
-            <label class="tiny">Font</label>
-            <select id="fontSel">
-              <option value="ui">Inter (clean)</option>
-              <option value="serif">Playfair (cozy)</option>
-            </select>
-          </div>
-          <div class="row">
-            <label class="tiny">Accent</label>
-            <input id="accentColor" type="color" value="#739c80" style="width:60px">
-            <label class="tiny">Secondary</label>
-            <input id="accent2Color" type="color" value="#3d5a49" style="width:60px">
-            <label class="tiny">Gold</label>
-            <input id="goldColor" type="color" value="#e9c46a" style="width:60px">
-          </div>
-          <div class="row">
-            <button class="ghost" id="switchProfile">Switch Profile</button>
-            <button class="ghost" id="newProfile">New Profile</button>
-            <button class="btn" id="saveProfile">Save</button>
-          </div>
-        </div>
+  <section class="page" data-page="profile">
+    <div class="card">
+      <b>Profile</b>
+      <div class="row">
+        <input id="profName" placeholder="Display name" />
+        <select id="themeSel">
+          <option value="dark">Dark</option>
+          <option value="light">Light</option>
+        </select>
+        <select id="fontSel">
+          <option value="ui">Inter (clean)</option>
+          <option value="serif">Playfair (cozy)</option>
+        </select>
       </div>
-      <div class="card">
-        <b>Home Tiles Customization</b>
-        <div id="tileEditor" class="grid two"></div>
-      </div>
+      <textarea id="profBio" placeholder="Bio (markdown allowed)…"></textarea>
     </div>
-  </div>
+  </section>
 
-  <!-- SETTINGS -->
-  <div class="page" id="settings">
-    <div class="grid two">
-      <div class="card">
-        <b>Model & Generation</b>
-        <div class="grid">
+  <section class="page" data-page="settings">
+    <div class="card">
+      <b>Settings</b>
+      <details open class="card" style="margin-top:10px">
+        <summary><strong>Advanced model controls</strong></summary>
+        <div class="row" style="margin-top:10px">
+          <label class="hint">Model</label>
           <select id="modelSel">
             <option value="Llama-3.2-1B-Instruct-q4f32_1-MLC">Llama 3.2 1B (fast)</option>
             <option value="Llama-3-8B-Instruct-q4f16_1-MLC">Llama 3 8B (richer)</option>
           </select>
-          <div class="row">
-            <label class="tiny">Temperature</label>
-            <input id="temp" type="range" min="0" max="1.5" step="0.05" value="0.9">
-            <input id="tempNum" class="num" type="number" min="0" max="1.5" step="0.05" value="0.9">
-          </div>
-          <div class="row">
-            <label class="tiny">Max tokens</label>
-            <input id="maxTok" type="range" min="128" max="2048" step="64" value="512">
-            <input id="maxTokNum" class="num" type="number" min="128" max="2048" step="64" value="512">
-          </div>
-          <label class="tiny">Global Style Baseline</label>
-          <textarea id="globalStyle" placeholder="Your overall writing voice…"></textarea>
-          <div class="row">
-            <label class="tiny">Sounds</label>
-            <select id="sounds">
-              <option value="off">Off (default)</option>
-              <option value="on">On</option>
-            </select>
-            <label class="tiny">Profanity</label>
-            <select id="profanity">
-              <option value="allow">Allow (realistic)</option>
-              <option value="avoid">Avoid</option>
-            </select>
-          </div>
-          <div class="row"><button class="btn" id="saveSettings">Save</button></div>
         </div>
-      </div>
-      <div class="card">
-        <b>Backup</b>
         <div class="row">
-          <button class="btn" id="exportAll">Export Library Pack</button>
-          <input type="file" id="importAll" accept="application/json" class="ghost">
+          <label class="hint">Temperature</label>
+          <input id="temp" type="range" min="0" max="1.5" step="0.05" value="0.9">
+          <input id="tempNum" type="number" min="0" max="1.5" step="0.05" value="0.9" style="width:80px">
         </div>
-        <div class="hint">Everything stays on-device. Packs include images as base64.</div>
-      </div>
-    </div>
-  </div>
-
-  <!-- CHARACTER EDITOR DIALOG -->
-  <dialog id="charDlg">
-    <div class="sheet">
-      <div class="row">
-        <b id="charDlgTitle">New Character</b>
-        <div class="grow"></div>
-        <button class="ghost" id="delCharBtn">Delete</button>
-        <button class="ghost" id="closeChar">Close</button>
-        <button class="btn" id="saveChar">Save</button>
-      </div>
-      <div class="grid two">
-        <div class="grid">
-          <input id="cName" placeholder="Name" />
-          <input id="cTags" placeholder="Tags (comma separated)" />
-          <textarea id="cSummary" placeholder="Summary"></textarea>
-          <label class="tiny">Avatar</label>
-          <input id="cAvatar" type="file" accept="image/*" />
-          <img id="cAvatarPreview" style="width:120px;height:120px;border-radius:12px;object-fit:cover;background:#2d3432" />
-          <div class="row">
-            <label class="tiny">Edit permissions</label>
-            <select id="cPerm">
-              <option value="private">Private (default)</option>
-              <option value="locked">Locked (view & use only)</option>
-              <option value="tweakable">Allow Tweaks (cloneable)</option>
-            </select>
-          </div>
+        <div class="row">
+          <label class="hint">Max tokens</label>
+          <input id="maxTok" type="range" min="128" max="2048" step="64" value="512">
+          <input id="maxTokNum" type="number" min="128" max="2048" step="64" value="512" style="width:80px">
         </div>
-        <div class="grid">
-          <label class="tiny">Appearance</label>
-          <textarea id="cAppearance" placeholder="Looks, outfits, mannerisms…"></textarea>
-          <label class="tiny">Personality & Voice</label>
-          <textarea id="cPersonality" placeholder="Traits, speech tics, favorite phrases…"></textarea>
-          <label class="tiny">Boundaries & Morals (consent, adults 21+; cussing allowed)</label>
-          <textarea id="cBoundaries" placeholder="Your rules…"></textarea>
-          <label class="tiny">Default sliders</label>
-          <div class="dial"><span class="emoji">❤️</span><span class="tiny">less spice</span>
-            <input type="range" id="cHeat" min="0" max="10" step="0.5" value="5">
-            <span class="tiny">more spice</span>
-            <input class="num" id="cHeatNum" type="number" min="0" max="10" step="0.5" value="5">
-          </div>
-          <div class="dial"><span class="emoji">🧭</span><span class="tiny">stylized</span>
-            <input type="range" id="cReal" min="0" max="10" step="0.5" value="5">
-            <span class="tiny">documentary</span>
-            <input class="num" id="cRealNum" type="number" min="0" max="10" step="0.5" value="5">
-          </div>
-          <div class="dial"><span class="emoji">🗡️</span><span class="tiny">implied</span>
-            <input type="range" id="cViol" min="0" max="10" step="0.5" value="3">
-            <span class="tiny">graphic</span>
-            <input class="num" id="cViolNum" type="number" min="0" max="10" step="0.5" value="3">
-          </div>
-          <div class="dial"><span class="emoji">✨</span><span class="tiny">literal</span>
-            <input type="range" id="cCreat" min="0" max="10" step="0.5" value="6">
-            <span class="tiny">imaginative</span>
-            <input class="num" id="cCreatNum" type="number" min="0" max="10" step="0.5" value="6">
-          </div>
-          <label class="tiny">Advanced: per-character style (optional)</label>
-          <textarea id="cStyle" placeholder="If this character needs special tone/rules…"></textarea>
-        </div>
-      </div>
-
+        <textarea id="globalStyle" placeholder="Global style / vibe for all writing…"></textarea>
+        <button class="btn" id="saveSettings">Save settings</button>
+      </details>
       <div class="row" style="margin-top:8px">
-        <button class="ghost" id="openChatFromEditor">Start Chat</button>
-        <span class="grow"></span>
-        <button class="ghost" id="exportChar">Export Card</button>
+        <button class="ghost" id="exportAll">Export Library Pack</button>
+        <input type="file" id="importAll" accept="application/json">
       </div>
     </div>
-  </dialog>
+  </section>
 
-  <!-- CHAT DIALOG (simplified; 3 skins via toggle) -->
-  <dialog id="chatDlg">
-    <div class="sheet">
-      <div class="row">
-        <div class="row">
-          <img id="chatAvatar" class="contactAvatar">
-          <div>
-            <b id="chatName">Character</b>
-            <div class="tiny" id="chatMini">summary…</div>
-          </div>
-        </div>
-        <div class="grow"></div>
-        <select id="chatSkin">
-          <option value="roleplay">Roleplay</option>
-          <option value="texting">Texting</option>
-          <option value="director">Director</option>
-        </select>
-        <button class="ghost" id="closeChat">Close</button>
-      </div>
-
-      <div class="grid two" id="directorPane" style="display:none">
-        <div>
-          <label class="tiny">Beats / Notes</label>
-          <textarea id="dirNotes" placeholder="Scene beats…"></textarea>
-        </div>
-        <div></div>
-      </div>
-
-      <div class="chatWrap">
-        <div id="chatHeaderInfo" class="chatHeader">
-          <button class="link" id="openBasicInfo">Basic Info</button>
-          <span class="pill" id="chatStatus">Idle</span>
-        </div>
-        <div id="chatArea" class="chatArea"></div>
-        <div class="composer">
-          <textarea id="chatInput" placeholder="Write your line…"></textarea>
-          <button class="btn" id="sendMsg">Send</button>
-          <button class="ghost" id="contMsg">Continue</button>
-        </div>
-        <div class="row">
-          <div class="tiny">❤️ Heat</div>
-          <input id="sHeat" type="range" min="0" max="10" step="0.5" value="5" class="grow">
-          <input id="sHeatNum" type="number" class="num" min="0" max="10" step="0.5" value="5">
-          <div class="tiny">🧭 Realism</div>
-          <input id="sReal" type="range" min="0" max="10" step="0.5" value="5" class="grow">
-          <input id="sRealNum" type="number" class="num" min="0" max="10" step="0.5" value="5">
-          <div class="tiny">🗡️ Viol</div>
-          <input id="sViol" type="range" min="0" max="10" step="0.5" value="3" class="grow">
-          <input id="sViolNum" type="number" class="num" min="0" max="10" step="0.5" value="3">
-          <div class="tiny">✨ Creat</div>
-          <input id="sCreat" type="range" min="0" max="10" step="0.5" value="6" class="grow">
-          <input id="sCreatNum" type="number" class="num" min="0" max="10" step="0.5" value="6">
-        </div>
-      </div>
+  <nav class="dock">
+    <div class="dockInner">
+      <button class="dockBtn active" data-page="home">Home</button>
+      <button class="dockBtn" data-page="characters">Characters</button>
+      <button class="dockBtn" data-page="writer">Story Writer</button>
+      <button class="dockBtn" data-page="lore">Lorebook</button>
+      <button class="dockBtn" data-page="settings">Settings</button>
     </div>
-  </dialog>
+  </nav>
 
 </div>
 
-<!-- On-device runtime -->
 <script src="https://esm.run/@mlc-ai/web-llm"></script>
 <script type="module" src="main.js"></script>
 </body>
