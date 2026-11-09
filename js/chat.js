@@ -6,7 +6,7 @@ import { h, icon, iconBtn, avatar, formatRP, toast, sheet, confirmDialog, prompt
 import { go, goBack, replaceTo, empty, page, toneSliders, modelStatusCard } from "./layout.js";
 import { getChat, getCharacter, getProfile, getSettings, lib, touchChat, deleteChat, normalizeMessage, msgText, createChat } from "./store.js";
 import { buildChatPrompt, buildSummaryPrompt, cleanReply, temperatureFor, pickSpeaker, mentioned, bannedHit, speakerName, firstName, fill, ARC_LABELS } from "./prompts.js";
-import { generate, stopGenerating, isBusy, onStatus, ensureEngine } from "./ai.js";
+import { generate, stopGenerating, isBusy, onStatus, ensureEngine, modelByKey, isPhone } from "./ai.js";
 
 export const THEME_LABELS = {
   default: "Default", neon: "Motel Neon", road: "Open Road", whiskey: "Whiskey & Leather",
@@ -350,7 +350,11 @@ export function renderChat(chatId) {
         }
       }
       if (final) target.alts[target.altIdx] = final;
-      else throw new Error("No reply came back. Try rerolling.");
+      else throw new Error(settings.provider === "online"
+        ? "The online AI sent back an empty reply. Try rerolling, or pick a different model in Me → AI model."
+        : modelByKey(settings.model).desktopOnly && isPhone()
+          ? `${modelByKey(settings.model).name} is too big for this phone, so it couldn't reply. Switch to Online or Hermes 3 · 3B in Me → AI model.`
+          : "The AI didn't write anything. Try rerolling. If it keeps happening, try a smaller model or Online in Me → AI model.");
     } catch (err) {
       if (!msgText(target)) {
         if (target.alts.length > 1) { target.alts.pop(); target.altIdx = target.alts.length - 1; }
