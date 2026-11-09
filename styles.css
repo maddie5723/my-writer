@@ -702,3 +702,8 @@ details.advanced[open] summary { margin-bottom: 10px; }
 .storyline-card { display: grid; gap: 8px; padding: 12px; border-radius: 14px; background: var(--surface); }
 .storyline-card .row .input { flex: 1; }
 .btn.icon-only { padding: 0; width: 48px; }
+
+/* model prices */
+.price-line { font-size: 13.5px; color: var(--text-2); }
+.price-line b { color: var(--accent); font-weight: 650; }
+.model-browser .chip-select { margin-bottom: -2px; }

@@ -2,13 +2,13 @@
    settings.js — "Me" tab, laid out like phone Settings:
    one short list, each row opens its own small page.
    ========================================================= */
-import { h, icon, toast, confirmDialog, promptDialog, autosize, field, segmented, toggle, downloadFile, debounce, avatar, navRow, group, fillRange } from "./ui.js";
+import { h, icon, toast, confirmDialog, promptDialog, autosize, field, segmented, toggle, downloadFile, debounce, avatar, navRow, group, fillRange, chipSelect } from "./ui.js";
 import { page, modelStatusCard } from "./layout.js";
 import {
   getProfile, updateProfile, getProfiles, getActiveProfileId, createProfile, renameProfile, deleteProfile, switchProfile,
   getSettings, updateSettings, exportAll, importAll, storageUsedKB, lib,
 } from "./store.js";
-import { MODELS, modelByKey, onStatus, ensureEngine, unloadEngine, checkGPU, listOnlineModels, isPhone } from "./ai.js";
+import { MODELS, modelByKey, onStatus, ensureEngine, unloadEngine, checkGPU, listOnlineModels, isPhone, centsLabel, messagesFor } from "./ai.js";
 import { applyTheme } from "./app.js";
 
 const ACCENTS = ["#86b49a", "#e3bf6b", "#d98b8b", "#8fb3e0", "#b59ad9", "#e0a170"];
@@ -232,20 +232,40 @@ function onlineSetup() {
   const url = h("input", { class: "input", value: s.onlineUrl, placeholder: "https://openrouter.ai/api/v1", onInput: () => save({ onlineUrl: url.value.trim() }) });
   const current = h("div", { class: "nav-row-detail" + (s.onlineModel ? "" : " warn") }, s.onlineModel || "Pick one below ↓");
   const listWrap = h("div", { class: "model-browser", hidden: true });
-  const search = h("input", { class: "input search", type: "search", placeholder: "Search models (e.g. hermes, llama, mistral)" });
+  const search = h("input", { class: "input search", type: "search", placeholder: "Search (e.g. llama, mistral)" });
   const results = h("div", { class: "group" });
+  const filterHint = h("p", { class: "muted small" });
   let all = [];
+  let filter = "hermes";
+  const HINTS = {
+    hermes: "Hermes models are great at roleplay and very open about swearing and spice.",
+    free: "Free models cost nothing but have daily limits, can be slow or busy, and some refuse spicy scenes. Great for trying it out.",
+    cheap: "The cheapest paid models first.",
+    all: "Every model, cheapest first.",
+  };
+  const filters = h("div", {});
 
   const draw = () => {
-    const q = search.value.toLowerCase();
+    const q = search.value.trim().toLowerCase();
     const cur = getSettings().onlineModel;
-    const hits = all.filter((m) => !q || `${m.id} ${m.name}`.toLowerCase().includes(q)).slice(0, 40);
+    filterHint.textContent = HINTS[filter];
+    const byCost = (a, b) => (a.perMsg ?? 1e9) - (b.perMsg ?? 1e9);
+    let list = all.filter((m) => !m.hidden);
+    if (filter === "hermes") list = list.filter((m) => /hermes/i.test(`${m.id} ${m.name}`));
+    if (filter === "free") list = list.filter((m) => m.free);
+    if (filter === "cheap") list = list.filter((m) => !m.free);
+    list.sort(byCost);
+    const hits = list.filter((m) => !q || `${m.id} ${m.name}`.toLowerCase().includes(q)).slice(0, 40);
     results.replaceChildren(...hits.map((m) => h("button", { class: `model-row ${m.id === cur ? "on" : ""}`, type: "button", onClick: () => {
       updateSettings({ onlineModel: m.id }); current.textContent = m.id; current.classList.remove("warn"); draw(); toast(`Using ${m.name} ✓`);
     } },
     h("div", { class: "model-row-text" },
-      h("div", { class: "model-row-head" }, h("b", {}, m.name)),
-      h("div", { class: "muted small" }, [m.id, m.ctx ? `${Math.round(m.ctx / 1000)}k memory` : "", m.price != null ? (m.price === 0 ? "free" : `$${m.price.toFixed(2)} per million words out`) : ""].filter(Boolean).join(" · "))),
+      h("div", { class: "model-row-head" }, h("b", {}, m.name), m.free ? h("span", { class: "badge" }, "Free") : null),
+      m.free
+        ? h("div", { class: "price-line" }, "Free · daily limits")
+        : m.perMsg == null ? h("div", { class: "price-line" }, "Price unknown")
+        : h("div", { class: "price-line" }, h("b", {}, centsLabel(m.perMsg).startsWith("under") ? "Under 0.1¢ a message" : `≈ ${centsLabel(m.perMsg)} a message`), ` · ${messagesFor(5, m.perMsg)} for $5 · ${messagesFor(20, m.perMsg)} for $20`),
+      h("div", { class: "muted small" }, m.id)),
     h("span", { class: "radio" }))));
     if (!hits.length) results.append(h("div", { class: "nav-row muted" }, "No matches"));
   };
@@ -257,12 +277,15 @@ function onlineSetup() {
       all = await listOnlineModels(getSettings());
       listWrap.hidden = false;
       browse.hidden = true;
-      search.value = all.some((m) => /hermes/i.test(m.id)) ? "hermes" : ""; draw();
+      filter = all.some((m) => /hermes/i.test(m.id)) ? "hermes" : "all";
+      filters.replaceChildren(chipSelect([["hermes", "Hermes"], ["free", "Free"], ["cheap", "Cheapest"], ["all", "All"]], filter, (v) => { filter = v; draw(); }));
+      search.value = ""; draw();
     } catch (err) { toast(err.message, { type: "error" }); browse.textContent = "Browse models"; }
     browse.disabled = false;
   } }, icon("users", 18), "Browse models");
 
-  listWrap.append(search, results);
+  listWrap.append(filters, filterHint, search, results,
+    h("p", { class: "muted small" }, "Estimates are for a medium-length story. Very long stories cost a bit more per message; new storylines cost less."));
   // open the list by itself when no model is picked yet (no hunting for a button)
   let tried = false;
   const autoBrowse = () => { if (!tried && !getSettings().onlineModel) { tried = true; browse.click(); } };
