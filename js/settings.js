@@ -8,7 +8,7 @@ import {
   getProfile, updateProfile, getProfiles, getActiveProfileId, createProfile, renameProfile, deleteProfile, switchProfile,
   getSettings, updateSettings, exportAll, importAll, storageUsedKB, lib,
 } from "./store.js";
-import { MODELS, modelByKey, onStatus, ensureEngine, unloadEngine, checkGPU, listOnlineModels } from "./ai.js";
+import { MODELS, modelByKey, onStatus, ensureEngine, unloadEngine, checkGPU, listOnlineModels, isPhone } from "./ai.js";
 import { applyTheme } from "./app.js";
 
 const ACCENTS = ["#86b49a", "#e3bf6b", "#d98b8b", "#8fb3e0", "#b59ad9", "#e0a170"];
@@ -111,7 +111,8 @@ export function renderMeModel() {
       class: `model-row ${m.key === cur ? "on" : ""}`, type: "button", role: "radio", "aria-checked": String(m.key === cur),
       onClick: async () => {
         if (m.key === getSettings().model) return;
-        updateSettings({ model: m.key });
+        if (m.desktopOnly && isPhone() && !(await confirmDialog(`${m.name} is about ${m.size} and needs a computer's graphics chip. On a phone it usually downloads and then can't reply.`, { title: "Too big for phones", ok: "Use it anyway" }))) return;
+        updateSettings({ model: m.key, modelChosen: true });
         await unloadEngine();
         draw();
         toast(`${m.name} selected`);
@@ -149,6 +150,8 @@ export function renderMeModel() {
 
   const localPart = h("div", { class: "form" },
     h("p", { class: "muted small" }, "Runs on your device, so nothing you write leaves it. Downloads once, then works offline."),
+    isPhone() ? h("div", { class: "tip" }, icon("sparkles", 16), h("span", {},
+      "On a phone, on-device AI is slow and limited by memory. Hermes 3 · 3B is the biggest that usually works; Llama 3.2 · 1B is the safest. For the best stories on a phone, use Online.")) : null,
     gpuNote,
     list,
     loadState, loadBtn,

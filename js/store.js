@@ -239,6 +239,7 @@ function normalizeSettings(s = {}) {
     globalStyle: s.globalStyle || "",
     profanity: ["avoid", "allow", "unfiltered"].includes(s.profanity) ? s.profanity : "allow",
     enterToSend: s.enterToSend ?? !matchMedia("(pointer: coarse)").matches,
+    modelChosen: !!s.modelChosen, // false = picked automatically (we may fix it for phones)
     provider: s.provider === "online" ? "online" : "local",
     onlineUrl: s.onlineUrl || "https://openrouter.ai/api/v1",
     onlineKey: s.onlineKey || "",

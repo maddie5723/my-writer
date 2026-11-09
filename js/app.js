@@ -3,13 +3,13 @@
    ========================================================= */
 import { h, icon, iconBtn, avatar, toast, timeAgo, popover, haptic, sheet, toggle } from "./ui.js";
 import { page, empty, noteRoute, resetStack } from "./layout.js";
-import { getProfile, lib, recentChats, getCharacter, msgText } from "./store.js";
+import { getProfile, lib, recentChats, getCharacter, msgText, getSettings, updateSettings } from "./store.js";
 import { renderCharacters, renderCharacter, renderCharacterEditor, addSampleCharacter, openLatestChat, pickImportFile } from "./characters.js";
 import { renderChat, newChatLike, namesLine } from "./chat.js";
 import { renderStories, renderStory } from "./writer.js";
 import { renderLore } from "./lore.js";
 import { renderMe, renderMeProfile, renderMeLook, renderMeModel, renderMeData } from "./settings.js";
-import { onStatus } from "./ai.js";
+import { onStatus, isPhone, modelByKey } from "./ai.js";
 
 /* ---------- Theme ---------- */
 const darkMQ = matchMedia("(prefers-color-scheme: dark)");
@@ -190,6 +190,11 @@ onStatus((s) => {
 });
 
 /* ---------- Boot ---------- */
+// An earlier version auto-picked the 8B model from an old setting; it's far too big for phones.
+{
+  const st = getSettings();
+  if (!st.modelChosen && isPhone() && modelByKey(st.model).desktopOnly) updateSettings({ model: "hermes3-3b" });
+}
 applyTheme();
 route();
 

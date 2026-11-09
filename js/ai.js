@@ -36,7 +36,8 @@ export const MODELS = [
     name: "Hermes 3 · 8B",
     ids: { f16: "Hermes-3-Llama-3.1-8B-q4f16_1-MLC", f32: "Hermes-3-Llama-3.1-8B-q4f32_1-MLC" },
     size: "≈4.9 GB",
-    blurb: "Richest writing and best memory for detail. Needs a strong GPU.",
+    blurb: "Richest writing and best memory for detail. Computers only: too big for phones.",
+    desktopOnly: true,
   },
 ];
 export const CONTEXT_TOKENS = 4096;
@@ -44,6 +45,8 @@ export const CONTEXT_TOKENS = 4096;
 export const contextTokens = (settings) => (settings?.provider === "online" ? 16000 : CONTEXT_TOKENS);
 export const isOnline = (settings) => settings?.provider === "online" && settings.onlineKey && settings.onlineModel;
 export const modelByKey = (k) => MODELS.find((m) => m.key === k) || MODELS[0];
+/** Phones and tablets have far less graphics memory than computers */
+export const isPhone = () => /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && /Macintosh/.test(navigator.userAgent));
 
 /* ---------- Status (UI subscribes to this) ---------- */
 const listeners = new Set();
@@ -105,7 +108,13 @@ export async function ensureEngine(modelKey) {
     let e;
     try {
       worker ??= new Worker(new URL("../worker.js", import.meta.url), { type: "module" });
-      e = await webllm.CreateWebWorkerMLCEngine(worker, id, config);
+      // If the background worker never starts (some browsers), don't hang forever: fall back after a while
+      let heard = false;
+      const cfg = { ...config, initProgressCallback: (p) => { heard = true; config.initProgressCallback(p); } };
+      e = await Promise.race([
+        webllm.CreateWebWorkerMLCEngine(worker, id, cfg),
+        new Promise((_, rej) => setTimeout(() => { if (!heard) rej(new Error("worker-stalled")); }, 25000)),
+      ]);
     } catch (err) {
       if (/WebGPU|memory|device|quota|fetch|network/i.test(String(err?.message))) throw err;
       try { worker?.terminate(); } catch { /* ignore */ }
