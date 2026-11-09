@@ -1,8 +1,8 @@
 /* =========================================================
-   characters.js — character list, profile page and editor.
+   characters.js — character grid, profile page and editor.
    ========================================================= */
-import { h, icon, iconBtn, avatar, toast, confirmDialog, field, autosize, imageToDataURL, downloadFile, timeAgo } from "./ui.js";
-import { page, section, empty, go, goBack, toneSliders } from "./layout.js";
+import { h, icon, iconBtn, avatar, toast, confirmDialog, field, autosize, imageToDataURL, downloadFile, timeAgo, popover, tabs } from "./ui.js";
+import { page, empty, go, goBack, replaceTo, toneSliders } from "./layout.js";
 import {
   lib, getCharacter, saveCharacter, deleteCharacter, chatsFor, createChat, deleteChat,
   normalizeCharacter, sampleCharacter, getProfile, msgText, DEFAULT_BOUNDARIES,
@@ -26,46 +26,43 @@ export function addSampleCharacter() {
   go(`#/c/${ch.id}`);
 }
 
-/* ---------- List ---------- */
+/* ---------- Grid ---------- */
 export function renderCharacters() {
   const chars = lib().characters;
   const fileInput = h("input", { type: "file", accept: "application/json,.json", hidden: true, onChange: (e) => importCard(e.target.files?.[0]) });
 
-  const card = (ch) => h("a", { class: "char-card", href: `#/c/${ch.id}` },
-    h("div", { class: "char-card-art" }, avatar(ch, "fill")),
-    h("div", { class: "char-card-text" },
-      h("div", { class: "char-card-name" }, ch.name),
-      ch.summary ? h("div", { class: "char-card-sum" }, ch.summary) : null));
+  const card = (ch) => h("a", { class: "pcard", href: `#/c/${ch.id}` },
+    avatar(ch, "fill"),
+    h("div", { class: "pcard-shade" }),
+    h("div", { class: "pcard-text" },
+      h("div", { class: "pcard-name" }, ch.name),
+      ch.summary ? h("div", { class: "pcard-sum" }, ch.summary) : null));
 
-  const grid = h("div", { class: "char-grid" },
-    chars.map(card),
-    h("a", { class: "char-card new", href: "#/c/new" }, icon("plus", 28), h("span", {}, "New character")));
+  const more = iconBtn("more", "More", (e) => popover(e.currentTarget, [
+    { label: "New character", icon: "plus", onClick: () => go("#/c/new") },
+    { label: "Import character card", icon: "upload", onClick: () => fileInput.click() },
+    { label: "Add sample (Wren)", icon: "sparkles", onClick: addSampleCharacter },
+  ]), "ghost");
 
+  const grid = h("div", { class: "pgrid" }, chars.map(card));
   let search = null;
   if (chars.length > 6) {
     search = h("input", {
-      class: "input search", type: "search", placeholder: "Search characters…",
+      class: "input search", type: "search", placeholder: "Search",
       onInput: () => {
         const q = search.value.toLowerCase();
-        [...grid.children].forEach((el, i) => {
-          const c = chars[i];
-          if (c) el.hidden = !(`${c.name} ${c.summary} ${c.tags.join(" ")}`.toLowerCase().includes(q));
-        });
+        [...grid.children].forEach((el, i) => { el.hidden = !(`${chars[i].name} ${chars[i].summary} ${chars[i].tags.join(" ")}`.toLowerCase().includes(q)); });
       },
     });
   }
 
-  const body = chars.length
-    ? [search, grid]
-    : empty("🃏", "No characters yet",
-      "Characters are who you chat and write with. Make your own, or start with a sample to see what a well-filled card looks like.",
-      [h("a", { class: "btn primary", href: "#/c/new" }, "Create a character"),
-        h("button", { class: "btn ghost", type: "button", onClick: addSampleCharacter }, "Meet Wren (sample)")]);
-
   return page({
     title: "Characters", large: true,
-    actions: [iconBtn("upload", "Import character card", () => fileInput.click(), "ghost"), fileInput],
-    body,
+    actions: [iconBtn("plus", "New character", () => go("#/c/new"), "ghost"), more, fileInput],
+    body: chars.length ? [search, grid]
+      : empty("🃏", "No characters yet", "Characters are who you chat and write with.",
+        [h("a", { class: "btn primary wide", href: "#/c/new" }, "Create a character"),
+          h("button", { class: "btn ghost wide", type: "button", onClick: addSampleCharacter }, "Meet Wren (sample)")]),
   });
 }
 
@@ -73,9 +70,8 @@ async function importCard(file) {
   if (!file) return;
   try {
     const raw = JSON.parse(await file.text());
-    // Accept our own export or the common "character card v2" JSON shape
-    const d = raw.data && raw.spec ? raw.data : raw;
-    const ch = normalizeCharacter({
+    const d = raw.data && raw.spec ? raw.data : raw; // our export or "character card v2"
+    const saved = saveCharacter(normalizeCharacter({
       name: d.name,
       avatar: d.avatar?.startsWith?.("data:") ? d.avatar : "",
       summary: d.summary || d.creator_notes || "",
@@ -89,9 +85,7 @@ async function importCard(file) {
       boundaries: d.boundaries,
       style: d.style || d.system_prompt || "",
       defaults: d.defaults,
-    });
-    ch.id = undefined;
-    const saved = saveCharacter(normalizeCharacter(ch));
+    }));
     toast(`Imported ${saved.name}`);
     go(`#/c/${saved.id}`);
   } catch {
@@ -99,48 +93,66 @@ async function importCard(file) {
   }
 }
 
-/* ---------- Profile page ---------- */
+/* ---------- Profile ---------- */
 export function renderCharacter(id) {
   const ch = getCharacter(id);
   if (!ch) return page({ title: "Not found", back: "#/characters", body: empty("🫥", "This character doesn't exist anymore.") });
-
   const chats = chatsFor(ch.id);
-  const hero = h("div", { class: "char-hero" },
+
+  const menu = (btn) => popover(btn, [
+    { label: "New chat", icon: "plus", onClick: () => startNewChat(ch) },
+    { label: "Edit", icon: "edit", onClick: () => go(`#/c/${ch.id}/edit`) },
+    { label: "Export card", icon: "download", onClick: () => downloadFile(JSON.stringify({ app: "my-writer", type: "character", ...ch }, null, 2), `${ch.name.replace(/[^\w-]+/g, "_")}.character.json`) },
+    "-",
+    { label: "Delete character", icon: "trash", danger: true, onClick: async () => {
+      if (await confirmDialog(`${ch.name} and all of their chats will be deleted.`, { title: `Delete ${ch.name}?`, ok: "Delete", danger: true })) {
+        deleteCharacter(ch.id); toast("Deleted"); replaceTo("#/characters");
+      }
+    } },
+  ]);
+
+  const hero = h("div", { class: "profile" },
     avatar(ch, "xl"),
-    h("h1", { class: "display" }, ch.name),
-    ch.summary ? h("p", { class: "muted center" }, ch.summary) : null,
+    h("h1", { class: "profile-name" }, ch.name),
+    ch.summary ? h("p", { class: "profile-sum" }, ch.summary) : null,
     ch.tags.length ? h("div", { class: "chips center" }, ch.tags.map((t) => h("span", { class: "chip" }, t))) : null,
-    h("div", { class: "row center wrap" },
-      h("button", { class: "btn primary", type: "button", onClick: () => openLatestChat(ch) }, icon("message", 18), chats.length ? "Continue chat" : "Start chatting"),
-      chats.length ? h("button", { class: "btn ghost", type: "button", onClick: () => startNewChat(ch) }, icon("plus", 18), "New chat") : null,
-      h("a", { class: "btn ghost", href: `#/c/${ch.id}/edit` }, icon("edit", 18), "Edit")));
+    h("div", { class: "profile-actions" },
+      h("button", { class: "btn primary grow", type: "button", onClick: () => openLatestChat(ch) }, icon("message", 18), "Message"),
+      h("a", { class: "btn ghost", href: `#/c/${ch.id}/edit` }, "Edit")));
+
+  const about = [
+    ["Personality", ch.personality], ["How they talk", ch.speech], ["Scenario", ch.scenario],
+  ].filter(([, v]) => v?.trim());
 
   const chatRow = (c) => {
     const last = c.messages[c.messages.length - 1];
-    const row = h("div", { class: "list-row" },
-      h("a", { class: "list-row-main", href: `#/chat/${c.id}` },
-        h("div", { class: "list-row-title" }, `${c.messages.length} message${c.messages.length === 1 ? "" : "s"} · ${timeAgo(c.updatedAt)}`),
-        h("div", { class: "list-row-sub" }, last ? msgText(last).slice(0, 140) : "Empty chat")),
-      iconBtn("trash", "Delete chat", async () => {
-        if (await confirmDialog("This conversation will be gone for good.", { title: "Delete chat?", ok: "Delete", danger: true })) {
-          deleteChat(c.id); row.remove(); toast("Chat deleted");
-        }
-      }, "ghost"));
+    const row = h("div", { class: "convo-wrap" },
+      h("a", { class: "convo", href: `#/chat/${c.id}` },
+        h("div", { class: "convo-text" },
+          h("div", { class: "convo-top" }, h("b", {}, `${c.messages.length} message${c.messages.length === 1 ? "" : "s"}`), h("span", {}, timeAgo(c.updatedAt))),
+          h("div", { class: "convo-last" }, last ? msgText(last).replace(/[*]/g, "").slice(0, 120) : "Empty chat"))),
+      iconBtn("more", "Chat options", (e) => popover(e.currentTarget, [
+        { label: "Delete chat", icon: "trash", danger: true, onClick: async () => {
+          if (await confirmDialog("This conversation will be gone for good.", { title: "Delete chat?", ok: "Delete", danger: true })) { deleteChat(c.id); row.remove(); toast("Chat deleted"); }
+        } },
+      ]), "ghost"));
     return row;
   };
 
   return page({
-    title: "", back: "#/characters",
-    actions: [iconBtn("download", "Export character card", () => exportCard(ch), "ghost")],
-    body: [hero, chats.length ? section("Conversations", h("div", { class: "list" }, chats.map(chatRow))) : null],
+    title: ch.name, back: "#/characters", cls: "profile-view",
+    actions: [iconBtn("more", "More", (e) => menu(e.currentTarget), "ghost")],
+    body: [
+      hero,
+      about.length ? h("div", { class: "group about" }, about.map(([k, v]) =>
+        h("div", { class: "about-item" }, h("div", { class: "about-k" }, k), h("div", { class: "about-v" }, fill(v, ch.name, getProfile().name || "you"))))) : null,
+      chats.length ? h("div", { class: "group-title" }, "Chats") : null,
+      chats.length ? h("div", { class: "group" }, chats.map(chatRow)) : null,
+    ],
   });
 }
 
-function exportCard(ch) {
-  downloadFile(JSON.stringify({ app: "my-writer", type: "character", ...ch }, null, 2), `${ch.name.replace(/[^\w-]+/g, "_")}.character.json`);
-}
-
-/* ---------- Editor ---------- */
+/* ---------- Editor (tabbed, short screens) ---------- */
 export function renderCharacterEditor(id) {
   const existing = id ? getCharacter(id) : null;
   if (id && !existing) return page({ title: "Not found", back: "#/characters", body: empty("🫥", "This character doesn't exist anymore.") });
@@ -151,95 +163,91 @@ export function renderCharacterEditor(id) {
 
   const ta = (key, placeholder, rows = 3) => {
     const t = h("textarea", { class: "input", rows, placeholder, value: draft[key] || "", onInput: () => { draft[key] = t.value; markDirty(); } });
-    autosize(t, 520);
+    autosize(t, 420);
     return t;
   };
-  const inp = (key, placeholder) => {
-    const i = h("input", { class: "input", placeholder, value: draft[key] || "", onInput: () => { draft[key] = i.value; markDirty(); } });
-    return i;
-  };
-
-  // Avatar picker
-  const avatarSlot = h("div", { class: "avatar-slot" });
-  const fileInput = h("input", {
-    type: "file", accept: "image/*", hidden: true,
-    onChange: async (e) => {
-      const f = e.target.files?.[0]; if (!f) return;
-      try { draft.avatar = await imageToDataURL(f); markDirty(); drawAvatar(); } catch (err) { toast(err.message, { type: "error" }); }
-    },
-  });
-  const drawAvatar = () => avatarSlot.replaceChildren(...[
-    h("button", { class: "avatar-pick", type: "button", onClick: () => fileInput.click(), "aria-label": "Choose picture" },
-      avatar({ name: draft.name || "?", avatar: draft.avatar }, "xl"),
-      h("span", { class: "avatar-pick-badge" }, icon("image", 16))),
-    draft.avatar ? h("button", { class: "link", type: "button", onClick: () => { draft.avatar = ""; markDirty(); drawAvatar(); } }, "Remove picture") : null,
-    fileInput].filter(Boolean));
-  drawAvatar();
-
-  const nameInput = inp("name", "e.g. Wren Calloway");
-  nameInput.addEventListener("input", () => { if (!draft.avatar) drawAvatar(); });
-  const tagsInput = h("input", { class: "input", placeholder: "slow burn, rivals, fantasy", value: draft.tags.join(", "),
-    onInput: () => { draft.tags = tagsInput.value.split(",").map((s) => s.trim()).filter(Boolean); markDirty(); } });
 
   const tip = (text) => h("div", { class: "tip" }, icon("sparkles", 16), h("span", {}, text));
 
-  const form = h("div", { class: "form" },
-    avatarSlot,
-    section("The basics", [
-      field("Name", nameInput),
-      field("Tagline", ta("summary", "One or two lines: who they are at a glance.", 2), "Shown on their card, and it's the first thing the AI reads about them."),
-      field("Tags", tagsInput, "Just for you, to organize. Separate with commas."),
-    ]),
-    section("Who they are", [
-      field("Personality", ta("personality", "Core traits, what they want, what they're afraid of, quirks, flaws, how they treat people they like vs. don't.", 4),
-        "Be specific. \"Teases people she likes, goes quiet when hurt\" beats \"nice and funny\"."),
-      field("How they talk", ta("speech", "Sentence length, slang, accent, swearing, pet names, verbal tics, what they'd NEVER say.", 3),
-        "This keeps their voice consistent. It's also reminded to the AI on every message."),
-      field("Example lines", ta("examples", "{{char}}: *doesn't look up* We're closed.\n{{user}}: The sign says open.\n{{char}}: The sign is an optimist.", 5),
-        "The #1 thing that makes them sound like themselves. Write 2–6 lines exactly how they'd say them. Use {{char}} for them and {{user}} for you."),
-      field("Appearance", ta("appearance", "Looks, style, how they move, what they smell like…", 2)),
-    ]),
-    section("Your story together", [
-      tip("{{user}} becomes your name from Settings → You, so the character always knows who they're talking to."),
-      field("Scenario", ta("scenario", "Who are you to them? Where and when does this start? What's the tension?", 3),
-        "Sets the scene so the first replies don't feel random."),
-      field("Opening message", ta("greeting", "*She glances up as the door opens.* You're late.", 3),
-        "Their first message in every new chat. It sets the tone and shows the AI the style to follow."),
-    ]),
-    section("Tone & rules", [
-      h("div", { class: "field-label" }, "Default tone for new chats"),
-      toneSliders(draft.defaults, markDirty),
-      field("Boundaries", ta("boundaries", DEFAULT_BOUNDARIES, 2), "Hard rules this character always follows."),
-      field("Writing style (optional)", ta("style", "e.g. Slow-burn, lots of subtext, short punchy replies.", 2), "Overrides for how this character's replies are written."),
-    ]),
-    existing ? h("button", { class: "btn danger-ghost wide", type: "button", onClick: remove }, icon("trash", 18), `Delete ${existing.name}`) : null);
+  const basics = () => {
+    const slot = h("div", { class: "avatar-slot" });
+    const fileInput = h("input", {
+      type: "file", accept: "image/*", hidden: true,
+      onChange: async (e) => {
+        const f = e.target.files?.[0]; if (!f) return;
+        try { draft.avatar = await imageToDataURL(f); markDirty(); draw(); } catch (err) { toast(err.message, { type: "error" }); }
+      },
+    });
+    const draw = () => slot.replaceChildren(...[
+      h("button", { class: "avatar-pick", type: "button", onClick: () => fileInput.click(), "aria-label": "Choose picture" },
+        avatar({ name: draft.name || "?", avatar: draft.avatar }, "xl"),
+        h("span", { class: "avatar-pick-badge" }, icon("image", 16))),
+      h("button", { class: "link", type: "button", onClick: () => (draft.avatar ? (draft.avatar = "", markDirty(), draw()) : fileInput.click()) }, draft.avatar ? "Remove photo" : "Add photo"),
+      fileInput].filter(Boolean));
+    draw();
+    const name = h("input", { class: "input", placeholder: "Name", value: draft.name, onInput: () => { draft.name = name.value; markDirty(); if (!draft.avatar) draw(); } });
+    const tags = h("input", { class: "input", placeholder: "slow burn, rivals, fantasy", value: draft.tags.join(", "),
+      onInput: () => { draft.tags = tags.value.split(",").map((s) => s.trim()).filter(Boolean); markDirty(); } });
+    return h("div", { class: "form" },
+      slot,
+      field("Name", name),
+      field("Tagline", ta("summary", "Who they are at a glance, in a line or two.", 2), "Shown on their card. It's also the first thing the AI reads."),
+      field("Tags", tags, "Optional, just to keep things organized."));
+  };
+
+  const personality = () => h("div", { class: "form" },
+    field("Personality", ta("personality", "Traits, wants, fears, quirks, flaws…", 4),
+      "Be specific. \"Teases people she likes, goes quiet when hurt\" beats \"nice and funny\"."),
+    field("How they talk", ta("speech", "Slang, sentence length, accent, swearing, pet names, things they'd never say…", 3),
+      "Keeps their voice consistent. The AI is reminded of this every message."),
+    field("Example lines", ta("examples", "{{char}}: *doesn't look up* We're closed.\n{{user}}: The sign says open.\n{{char}}: The sign is an optimist.", 5),
+      "The #1 way to make them sound like themselves. {{char}} = them, {{user}} = you."),
+    field("Appearance", ta("appearance", "Looks, style, how they move…", 2)));
+
+  const story = () => h("div", { class: "form" },
+    tip("{{user}} turns into your name (set it in Me → Profile), so they always know who they're talking to."),
+    field("Scenario", ta("scenario", "Who are you to them? Where does it start? What's the tension?", 3)),
+    field("First message", ta("greeting", "*She glances up as the door opens.* You're late.", 3),
+      "What they say when a new chat starts. Sets the tone and style."));
+
+  const tone = () => h("div", { class: "form" },
+    h("div", { class: "field-hint" }, "Starting tone for new chats. You can still change it in any chat."),
+    toneSliders(draft.defaults, markDirty),
+    field("Boundaries", ta("boundaries", DEFAULT_BOUNDARIES, 2), "Rules they always follow."),
+    field("Writing style", ta("style", "e.g. Short punchy replies, lots of subtext.", 2), "Optional."));
+
+  const t = tabs([
+    { label: "Basics", render: basics },
+    { label: "Personality", render: personality },
+    { label: "Story", render: story },
+    { label: "Tone", render: tone },
+  ]);
 
   function save({ quiet = false } = {}) {
-    if (!draft.name.trim()) { if (!quiet) { toast("Give them a name first", { type: "error" }); nameInput.focus(); } return null; }
+    if (!draft.name.trim()) {
+      if (!quiet) { toast("Give them a name first", { type: "error" }); t.select(0); }
+      return null;
+    }
     const saved = saveCharacter(draft);
     dirty = false;
     if (!quiet) toast("Saved");
     return saved;
   }
-  async function remove() {
-    if (await confirmDialog(`${existing.name} and all of their chats will be deleted.`, { title: "Delete character?", ok: "Delete", danger: true })) {
-      deleteCharacter(existing.id); dirty = false; toast("Deleted"); location.replace("#/characters");
-    }
-  }
-  async function back() {
-    if (dirty && !(await confirmDialog("You have unsaved changes.", { title: "Leave without saving?", ok: "Discard", danger: true }))) return;
+  async function cancel() {
+    if (dirty && !(await confirmDialog("Your changes won't be saved.", { title: "Discard changes?", ok: "Discard", danger: true }))) return;
     dirty = false;
     goBack(existing ? `#/c/${existing.id}` : "#/characters");
   }
 
   const view = page({
-    title: existing ? "Edit character" : "New character",
-    actions: [h("button", { class: "btn primary small", type: "button", onClick: () => { const s = save(); if (s) location.replace(`#/c/${s.id}`); } }, "Save")],
-    body: form,
+    title: existing ? "Edit" : "New character",
+    left: h("button", { class: "text-btn", type: "button", onClick: cancel }, "Cancel"),
+    actions: [h("button", { class: "text-btn strong", type: "button", onClick: () => { const s = save(); if (s) replaceTo(`#/c/${s.id}`); } }, "Save")],
+    under: t.bar,
+    body: t.panel,
+    cls: "editor",
   });
-  // custom back so we can warn about unsaved changes
-  view.querySelector(".topbar").prepend(iconBtn("back", "Back", back, "ghost back-btn"));
-  // leaving another way (system back, tab bar) quietly keeps the work
+  // leaving another way (system back) quietly keeps the work
   view.onLeave = () => { if (dirty && save({ quiet: true })) toast("Changes saved"); };
   return view;
 }

@@ -1,33 +1,49 @@
 /* =========================================================
    layout.js — shared page chrome & navigation helpers.
    ========================================================= */
-import { h, iconBtn, icon } from "./ui.js";
+import { h, iconBtn, icon, fillRange } from "./ui.js";
 import { TONE_META, toneWord } from "./prompts.js";
-import { onStatus, status } from "./ai.js";
+import { onStatus } from "./ai.js";
 
 /* ---------- Navigation with a tiny in-app history stack ---------- */
 const stack = [];
+let replacing = false;
+/** Navigate without leaving the current page in history (after save/delete) */
+export function replaceTo(hash) { replacing = true; location.replace(hash); }
+/** Returns "back" | "forward" so the router can slide the right way */
 export function noteRoute(hash) {
-  if (stack.length > 1 && stack[stack.length - 2] === hash) stack.pop();
-  else if (stack[stack.length - 1] !== hash) stack.push(hash);
+  if (replacing) { replacing = false; stack[stack.length - 1] = hash; return "back"; }
+  if (stack.length > 1 && stack[stack.length - 2] === hash) { stack.pop(); return "back"; }
+  if (stack[stack.length - 1] !== hash) stack.push(hash);
+  return "forward";
 }
+export const resetStack = (hash) => { stack.length = 0; stack.push(hash); };
 export const go = (hash) => { location.hash = hash; };
 /** Back button: real history if we came from inside the app, otherwise a sensible parent */
-export function goBack(fallback = "#/home") {
+export function goBack(fallback = "#/chats") {
   if (stack.length > 1) history.back();
   else { stack.length = 0; location.replace(fallback); }
 }
 
-/* ---------- Page frame ---------- */
-export function page({ title, subtitle, back, actions = [], body, cls = "", large = false, titleEl = null }) {
-  const top = h("header", { class: `topbar ${large ? "large" : ""}` },
-    back ? iconBtn("back", "Back", () => goBack(back), "ghost back-btn") : null,
-    titleEl || h("div", { class: "topbar-title" },
-      h("h1", {}, title),
-      subtitle ? h("div", { class: "topbar-sub" }, subtitle) : null),
+/* ---------- Page frame ----------
+   large: big title that scrolls away (tab roots)
+   back:  fallback route for the ‹ button
+   left:  custom left element (e.g. a "Cancel" button) */
+export function page({ title, subtitle, back, left, actions = [], body, cls = "", large = false, under = null }) {
+  const small = h("div", { class: "topbar-title" },
+    h("h1", {}, title || ""),
+    subtitle ? h("div", { class: "topbar-sub" }, subtitle) : null);
+  const top = h("header", { class: `topbar ${large ? "is-large" : ""}` },
+    left || (back ? iconBtn("back", "Back", () => goBack(back), "ghost back-btn") : h("span", { class: "topbar-spacer" })),
+    small,
     h("div", { class: "topbar-actions" }, actions));
-  const scroller = h("div", { class: "view-body" }, h("div", { class: "container" }, body));
-  return h("section", { class: `view ${cls}` }, top, scroller);
+  const bigTitle = large ? h("h1", { class: "large-title" }, title) : null;
+  const scroller = h("div", { class: "view-body" }, h("div", { class: "container" }, bigTitle, body));
+  if (large) {
+    // show the small centered title once the big one scrolls away (iOS style)
+    scroller.addEventListener("scroll", () => top.classList.toggle("scrolled", scroller.scrollTop > 36), { passive: true });
+  }
+  return h("section", { class: `view ${cls}` }, top, under, scroller);
 }
 
 export function section(title, children, action) {
@@ -41,7 +57,7 @@ export function empty(emoji, title, text, actions = []) {
     h("div", { class: "empty-emoji", "aria-hidden": "true" }, emoji),
     h("h3", {}, title),
     text ? h("p", { class: "muted" }, text) : null,
-    actions.length ? h("div", { class: "row center wrap" }, actions) : null);
+    actions.length ? h("div", { class: "stack" }, actions) : null);
 }
 
 /* ---------- Tone sliders (words, not just numbers) ---------- */
@@ -54,7 +70,7 @@ export function toneSliders(tone, onChange) {
     });
     return h("div", { class: "tone" },
       h("div", { class: "tone-head" }, h("span", { class: "tone-emoji", "aria-hidden": "true" }, m.emoji), h("span", { class: "tone-label" }, m.label), val),
-      input,
+      fillRange(input),
       h("div", { class: "tone-ends" }, h("span", {}, m.low), h("span", {}, m.high)));
   }));
 }
@@ -64,7 +80,7 @@ export function modelStatusCard({ onRetry } = {}) {
   const bar = h("div", { class: "progress-fill" });
   const text = h("div", { class: "status-text" });
   const retry = h("button", { class: "btn small ghost", type: "button", onClick: () => onRetry?.() }, "Try again");
-  const settingsBtn = h("a", { class: "btn small ghost", href: "#/you" }, "Settings");
+  const settingsBtn = h("a", { class: "btn small ghost", href: "#/me/model" }, "Change model");
   const card = h("div", { class: "model-status", hidden: true },
     h("div", { class: "row" }, icon("cpu", 18), text),
     h("div", { class: "progress" }, bar),
@@ -83,5 +99,3 @@ export function modelStatusCard({ onRetry } = {}) {
   });
   return card;
 }
-
-export const modelBusyText = () => (status.state === "loading" ? `${Math.round(status.progress * 100)}%` : "");

@@ -254,3 +254,91 @@ export function imageToDataURL(file, max = 384) {
     img.src = url;
   });
 }
+
+/* ---------- Haptics (Android; harmless elsewhere) ---------- */
+export function haptic(ms = 8) { try { navigator.vibrate?.(ms); } catch { /* ignore */ } }
+
+/* ---------- Pop-up menu anchored to a button (instead of a full sheet) ---------- */
+let openPop = null;
+export function closePopover() {
+  if (!openPop) return;
+  const { menu, scrim, onKey } = openPop;
+  openPop = null;
+  document.removeEventListener("keydown", onKey);
+  menu.classList.add("out"); scrim.remove();
+  setTimeout(() => menu.remove(), 140);
+}
+/**
+ * items: [{ label, icon, onClick, danger }] or "-" for a divider.
+ */
+export function popover(anchor, items, { align = "end", title } = {}) {
+  closePopover();
+  haptic();
+  const list = items.filter(Boolean);
+  const menu = h("div", { class: "popover", role: "menu" },
+    title ? h("div", { class: "pop-title" }, title) : null,
+    list.map((it) => it === "-"
+      ? h("div", { class: "pop-sep", role: "separator" })
+      : h("button", {
+        class: `pop-item ${it.danger ? "danger" : ""}`, type: "button", role: "menuitem",
+        onClick: () => { closePopover(); it.onClick(); },
+      }, h("span", {}, it.label), it.icon ? icon(it.icon, 19) : null)));
+  const scrim = h("div", { class: "pop-scrim", onClick: closePopover, onTouchmove: closePopover });
+  document.body.append(scrim, menu);
+
+  const r = anchor.getBoundingClientRect();
+  const mw = menu.offsetWidth, mh = menu.offsetHeight;
+  let left = align === "end" ? r.right - mw : r.left;
+  left = Math.min(Math.max(10, left), innerWidth - mw - 10);
+  let top = r.bottom + 6, fromTop = true;
+  if (top + mh > innerHeight - 10) { top = Math.max(10, r.top - mh - 6); fromTop = false; }
+  Object.assign(menu.style, { left: `${left}px`, top: `${top}px`, transformOrigin: `${align === "end" ? "right" : "left"} ${fromTop ? "top" : "bottom"}` });
+
+  const onKey = (e) => { if (e.key === "Escape") closePopover(); };
+  document.addEventListener("keydown", onKey);
+  openPop = { menu, scrim, onKey };
+  menu.querySelector(".pop-item")?.focus({ preventScroll: true });
+}
+window.addEventListener("hashchange", closePopover);
+
+/* ---------- Tabs inside a screen or sheet ---------- */
+export function tabs(items, initial = 0) {
+  const bar = h("div", { class: "subtabs", role: "tablist" });
+  const panel = h("div", { class: "subtab-panel" });
+  let cur = -1;
+  const select = (i) => {
+    if (i === cur) return;
+    cur = i;
+    [...bar.children].forEach((b, j) => { b.classList.toggle("on", j === i); b.setAttribute("aria-selected", String(j === i)); });
+    panel.replaceChildren(items[i].render());
+    panel.scrollTop = 0;
+  };
+  items.forEach((it, i) => bar.append(h("button", { type: "button", role: "tab", onClick: () => { haptic(5); select(i); } }, it.label)));
+  select(initial);
+  return { bar, panel, select };
+}
+
+/** iOS-settings style grouped list row */
+export function navRow({ icon: ic, label, detail, href, onClick, danger }) {
+  const inner = [
+    ic ? h("span", { class: "nav-row-ic" }, icon(ic, 19)) : null,
+    h("span", { class: "nav-row-label" }, label),
+    detail ? h("span", { class: "nav-row-detail" }, detail) : null,
+    href || onClick ? icon("chevronRight", 18) : null,
+  ];
+  return href
+    ? h("a", { class: `nav-row ${danger ? "danger" : ""}`, href }, inner)
+    : h("button", { class: `nav-row ${danger ? "danger" : ""}`, type: "button", onClick }, inner);
+}
+export const group = (...rows) => h("div", { class: "group" }, rows);
+
+/** Colour a range slider's track up to the thumb */
+export function fillRange(el) {
+  const upd = () => {
+    const min = +el.min || 0, max = +el.max || 100;
+    el.style.setProperty("--fill", `${((+el.value - min) / (max - min)) * 100}%`);
+  };
+  el.addEventListener("input", upd);
+  upd();
+  return el;
+}
