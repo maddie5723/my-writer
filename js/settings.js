@@ -8,7 +8,7 @@ import {
   getProfile, updateProfile, getProfiles, getActiveProfileId, createProfile, renameProfile, deleteProfile, switchProfile,
   getSettings, updateSettings, exportAll, importAll, storageUsedKB, lib,
 } from "./store.js";
-import { MODELS, modelByKey, onStatus, ensureEngine, unloadEngine, checkGPU } from "./ai.js";
+import { MODELS, modelByKey, onStatus, ensureEngine, unloadEngine, checkGPU, listOnlineModels } from "./ai.js";
 import { applyTheme } from "./app.js";
 
 const ACCENTS = ["#86b49a", "#e3bf6b", "#d98b8b", "#8fb3e0", "#b59ad9", "#e0a170"];
@@ -33,7 +33,7 @@ export function renderMe() {
       card,
       group(
         navRow({ icon: "eye", label: "Appearance", detail: themeName, href: "#/me/look" }),
-        navRow({ icon: "cpu", label: "AI model", detail: modelByKey(s.model).name, href: "#/me/model" })),
+        navRow({ icon: "cpu", label: "AI model", detail: s.provider === "online" ? (s.onlineModel.split("/").pop() || "Online") : modelByKey(s.model).name, href: "#/me/model" })),
       group(
         navRow({ icon: "book", label: "Lorebook", detail: String(L.lore.length), href: "#/lore" })),
       group(
@@ -47,16 +47,28 @@ export function renderMe() {
 export function renderMeProfile() {
   const p = getProfile();
   const save = debounce((patch) => updateProfile(patch), 300);
-  const name = h("input", { class: "input", value: p.name, placeholder: "Your name", onInput: () => save({ name: name.value }) });
-  const persona = h("textarea", { class: "input", rows: 4, value: p.persona,
-    placeholder: "Age, looks, job, personality, how you like to play…",
-    onInput: () => save({ persona: persona.value }) });
-  autosize(persona, 300);
+  const inp = (key, placeholder, extra = {}) => {
+    const el = h("input", { class: "input", value: p[key], placeholder, ...extra, onInput: () => save({ [key]: el.value }) });
+    return el;
+  };
+  const ta = (key, rows, placeholder) => {
+    const el = h("textarea", { class: "input", rows, value: p[key], placeholder, onInput: () => save({ [key]: el.value }) });
+    autosize(el, 300);
+    return el;
+  };
   return page({
     title: "Profile", back: "#/me",
     body: h("div", { class: "form" },
-      field("Your name", name, "Characters call you this."),
-      field("About you", persona, "Every character knows this, so they react to you, not a stranger.")),
+      field("Your name", inp("name", "Your name"), "Characters call you this."),
+      h("div", { class: "two-col" },
+        field("Age", inp("age", "e.g. 25", { inputmode: "numeric" })),
+        field("Pronouns", inp("pronouns", "e.g. she/her"))),
+      field("About you", ta("persona", 3, "Looks, job, personality, how you like to play…"), "Every character knows this, so they react to you, not a stranger."),
+      h("div", { class: "group-title" }, "Never"),
+      field("Things characters should never do", ta("avoid", 4, "One per line, e.g.\nDon't call me kid or kiddo\nDon't treat me like I'm fragile\nNo pet names unless we're together"),
+        "Hard rules for every character in every chat. They're reminded of these with every message."),
+      field("Banned words", inp("banned", "e.g. kid, kiddo, sweetheart"),
+        "Comma separated. If a reply uses one, it's automatically rewritten.")),
   });
 }
 
@@ -135,14 +147,22 @@ export function renderMeModel() {
     onInput: () => saveSoon({ globalStyle: style.value }) });
   autosize(style, 240);
 
+  const localPart = h("div", { class: "form" },
+    h("p", { class: "muted small" }, "Runs on your device, so nothing you write leaves it. Downloads once, then works offline."),
+    gpuNote,
+    list,
+    loadState, loadBtn,
+    modelStatusCard({ onRetry: () => ensureEngine(getSettings().model).catch(() => {}) }));
+  const onlinePart = onlineSetup();
+  const showPart = (v) => { localPart.hidden = v !== "local"; onlinePart.hidden = v !== "online"; };
+  showPart(s.provider);
+
   return page({
     title: "AI model", back: "#/me",
     body: h("div", { class: "form" },
-      h("p", { class: "muted small" }, "Runs on your device, so nothing you write leaves it. Downloads once, then works offline."),
-      gpuNote,
-      list,
-      loadState, loadBtn,
-      modelStatusCard({ onRetry: () => ensureEngine(getSettings().model).catch(() => {}) }),
+      field("Where the AI runs", segmented([["local", "On this device"], ["online", "Online (smarter)"]], s.provider, (v) => { updateSettings({ provider: v }); showPart(v); })),
+      localPart,
+      onlinePart,
       h("div", { class: "group-title" }, "Writing"),
       h("div", { class: "tone" },
         h("div", { class: "tone-head" }, h("span", { class: "tone-emoji" }, "🎲"), h("span", { class: "tone-label" }, "Creativity"), tempVal),
@@ -198,4 +218,56 @@ export function renderMeData() {
         if (n) { createProfile(n); toast(`Created ${n}`); draw(); }
       } }, icon("plus", 18), "New profile")),
   });
+}
+
+/* ---------- Online AI setup (OpenRouter or any OpenAI-compatible service) ---------- */
+function onlineSetup() {
+  const s = getSettings();
+  const save = debounce((patch) => updateSettings(patch), 300);
+  const key = h("input", { class: "input", type: "password", value: s.onlineKey, placeholder: "sk-or-…", autocomplete: "off", onInput: () => save({ onlineKey: key.value.trim() }) });
+  const url = h("input", { class: "input", value: s.onlineUrl, placeholder: "https://openrouter.ai/api/v1", onInput: () => save({ onlineUrl: url.value.trim() }) });
+  const current = h("div", { class: "nav-row-detail" }, s.onlineModel || "None yet");
+  const listWrap = h("div", { class: "model-browser", hidden: true });
+  const search = h("input", { class: "input search", type: "search", placeholder: "Search models (e.g. hermes, llama, mistral)" });
+  const results = h("div", { class: "group" });
+  let all = [];
+
+  const draw = () => {
+    const q = search.value.toLowerCase();
+    const cur = getSettings().onlineModel;
+    const hits = all.filter((m) => !q || `${m.id} ${m.name}`.toLowerCase().includes(q)).slice(0, 40);
+    results.replaceChildren(...hits.map((m) => h("button", { class: `model-row ${m.id === cur ? "on" : ""}`, type: "button", onClick: () => {
+      updateSettings({ onlineModel: m.id }); current.textContent = m.id; draw(); toast(`Using ${m.name}`);
+    } },
+    h("div", { class: "model-row-text" },
+      h("div", { class: "model-row-head" }, h("b", {}, m.name)),
+      h("div", { class: "muted small" }, [m.id, m.ctx ? `${Math.round(m.ctx / 1000)}k memory` : "", m.price != null ? (m.price === 0 ? "free" : `$${m.price.toFixed(2)} per million words out`) : ""].filter(Boolean).join(" · "))),
+    h("span", { class: "radio" }))));
+    if (!hits.length) results.append(h("div", { class: "nav-row muted" }, "No matches"));
+  };
+  search.addEventListener("input", draw);
+
+  const browse = h("button", { class: "btn ghost wide", type: "button", onClick: async () => {
+    browse.disabled = true; browse.textContent = "Loading…";
+    try {
+      all = await listOnlineModels(getSettings());
+      listWrap.hidden = false;
+      browse.hidden = true;
+      search.value = "hermes"; draw();
+    } catch (err) { toast(err.message, { type: "error" }); browse.textContent = "Browse models"; }
+    browse.disabled = false;
+  } }, icon("users", 18), "Browse models");
+
+  listWrap.append(search, results);
+
+  return h("div", { class: "form" },
+    h("div", { class: "tip" }, icon("sparkles", 16), h("span", {},
+      "Uses a much bigger AI on the internet, so characters are smarter, funnier and remember more. ",
+      "Your chats are sent to that service, and it usually costs a few cents per conversation.")),
+    h("div", { class: "group" }, h("div", { class: "nav-row" }, h("span", { class: "nav-row-label" }, "Model"), current)),
+    field("API key", key, "Get one at openrouter.ai → Keys. It stays on this device only and is never included in backups."),
+    browse,
+    listWrap,
+    h("details", { class: "advanced" }, h("summary", {}, "Advanced"),
+      field("Service address", url, "Any OpenAI-compatible API works. Leave as is for OpenRouter.")));
 }

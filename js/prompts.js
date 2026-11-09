@@ -11,7 +11,7 @@
       never pushed out by a long chat.
    5. If the model starts writing YOUR lines, that part is cut off.
    ========================================================= */
-import { CONTEXT_TOKENS } from "./ai.js";
+import { contextTokens } from "./ai.js";
 import { msgText } from "./store.js";
 
 /* ---------- Tone sliders → plain words the model understands ---------- */
@@ -118,11 +118,73 @@ function assemble(sections, maxChars) {
   return live.filter((s) => s.body).map((s) => (s.title ? `## ${s.title}\n${s.body.trim()}` : s.body.trim())).join("\n\n");
 }
 
+
+/* ---------- Who's who ---------- */
+export const firstName = (n = "") => n.trim().split(/\s+/)[0] || n;
+
+/** "Maddie is 25 years old (she/her)" + a rule so nobody treats an adult like a kid */
+export function userIdentity(profile) {
+  const user = profile.name?.trim() || "User";
+  const bits = [];
+  if (profile.age) bits.push(`${profile.age} years old`);
+  if (profile.pronouns) bits.push(`uses ${profile.pronouns} pronouns`);
+  const line = bits.length ? `${user} ${bits.join(" and ")}.` : "";
+  const adult = profile.age ? `Treat ${user} as the ${profile.age}-year-old adult they are.` : "";
+  return { user, line, adult };
+}
+
+/** Everything the user never wants, from Me, the characters and this chat */
+export function avoidList({ profile, cast = [], chat }) {
+  const lines = [];
+  const user = profile.name?.trim() || "User";
+  const add = (t, f = (x) => x) => String(t || "").split(/\n+/).map((x) => f(x.trim())).filter(Boolean).forEach((x) => lines.push(x.replace(/^[-•*]\s*/, "")));
+  add(fill(profile.avoid, "", user));
+  cast.forEach((c) => add(fill(c.avoid, c.name, user), (x) => (x ? `${c.name}: ${x}` : "")));
+  add(fill(chat?.avoid, cast[0]?.name || "", user));
+  const banned = bannedWords(profile);
+  if (banned.length) lines.push(`Never use these words: ${banned.join(", ")}.`);
+  return lines;
+}
+export const bannedWords = (profile) => String(profile.banned || "").split(/[,\n]/).map((w) => w.trim()).filter(Boolean);
+
+/** Returns the first banned word found in text, or null */
+export function bannedHit(text, profile) {
+  for (const w of bannedWords(profile)) {
+    if (new RegExp(`(^|[^\\p{L}])${reEscape(w)}([^\\p{L}]|$)`, "iu").test(text)) return w;
+  }
+  return null;
+}
+
+/** Cast members whose name (or first name) appears in text */
+export function mentioned(text, cast) {
+  return cast.filter((c) => new RegExp(`(^|[^\\p{L}])(${reEscape(c.name)}|${reEscape(firstName(c.name))})([^\\p{L}]|$)`, "iu").test(text));
+}
+
+/** Who should answer the user's message? Someone they named, else whoever spoke last */
+export function pickSpeaker(chat, cast, userText = "") {
+  if (cast.length <= 1) return cast[0];
+  const named = mentioned(userText, cast);
+  if (named.length) return named[0];
+  for (let i = chat.messages.length - 1; i >= 0; i--) {
+    const m = chat.messages[i];
+    if (m.role === "assistant" && m.speaker && m.speaker !== "narrator") {
+      const c = cast.find((x) => x.id === m.speaker);
+      if (c) return c;
+    }
+  }
+  return cast[0];
+}
+
+export function speakerName(m, cast) {
+  if (m.speaker === "narrator") return "Narrator";
+  return (cast.find((c) => c.id === m.speaker) || cast[0])?.name || "Character";
+}
+
 const LENGTHS = {
   roleplay: {
-    short: { tokens: 160, rule: "Keep replies short: 1–3 sentences." },
-    medium: { tokens: 320, rule: "Reply in one or two paragraphs." },
-    long: { tokens: 600, rule: "Write a rich reply of two to four paragraphs." },
+    short: { tokens: 160, rule: "Keep it short: 1–3 sentences." },
+    medium: { tokens: 320, rule: "Write one or two paragraphs." },
+    long: { tokens: 600, rule: "Write a rich passage of two to four paragraphs." },
   },
   texting: {
     short: { tokens: 80, rule: "Send one short text." },
@@ -131,60 +193,111 @@ const LENGTHS = {
   },
 };
 
-/* ---------- Chat prompt ---------- */
-export function buildChatPrompt({ ch, chat, profile, settings, lore, extraUserText = null }) {
-  const name = ch.name;
-  const user = profile.name?.trim() || "User";
-  const f = (t) => fill(t, name, user);
-  const mode = chat.mode;
+/* ---------- Chat / scene prompt ----------
+   speaker: a character from cast, or "narrator" */
+export function buildChatPrompt({ chat, cast, speaker, profile, settings, lore, extraUserText = null }) {
+  const isNarrator = speaker === "narrator";
+  const me = isNarrator ? null : (speaker || cast[0]);
+  const name = isNarrator ? "the Narrator" : me.name;
+  const { user, line: userLine, adult } = userIdentity(profile);
+  const group = cast.length > 1 || chat.narrator;
+  const f = (t, c = me || cast[0]) => fill(t, c?.name || "", user);
+  const mode = isNarrator ? "roleplay" : chat.mode;
   const len = LENGTHS[mode][chat.length];
   const maxTokens = len.tokens;
+  const others = cast.filter((c) => c !== me);
+  const avoids = avoidList({ profile, cast, chat });
 
   const recent = [...chat.messages.slice(-4).map(msgText), extraUserText || ""].join("\n");
   const loreHits = matchLore(lore, recent + "\n" + chat.direction);
 
-  const formatRule = mode === "texting"
-    ? `This is a text-message conversation on your phones. Reply exactly the way ${name} texts: their slang, their punctuation habits, emoji only if it suits them. No narration, no actions, no asterisks. Separate multiple texts with a blank line.`
-    : `Describe ${name}'s actions, expressions and body language in *asterisks* and put spoken words in "quotes". Show feelings through behavior and subtext, not by announcing them.`;
+  /* who is in the scene */
+  const castSections = [];
+  if (!group) {
+    castSections.push(
+      { title: `Who ${me.name} is`, priority: 9, body: f(me.summary) },
+      { title: `${me.name}'s personality`, priority: 8, body: f(me.personality) },
+      { title: `How ${me.name} talks`, priority: 8, body: f(me.speech) },
+      { title: `${me.name}'s appearance`, priority: 4, body: f(me.appearance) },
+      { title: `Examples of ${me.name}'s voice (for style only — don't repeat them)`, priority: 5, body: f(me.examples) });
+  } else {
+    // the current speaker's sheet is kept most complete; others can be trimmed first
+    for (const c of [me, ...others].filter(Boolean)) {
+      const isMe = c === me;
+      castSections.push({
+        title: c.name + (isMe ? " (writing as them this turn)" : ""),
+        priority: isMe ? 8 : 6,
+        body: [
+          f(c.summary, c),
+          c.personality && `Personality: ${f(c.personality, c)}`,
+          c.speech && `How they talk: ${f(c.speech, c)}`,
+          c.appearance && `Looks: ${f(c.appearance, c)}`,
+        ].filter(Boolean).join("\n"),
+      });
+      if (c.examples) castSections.push({ title: `Examples of ${c.name}'s voice (style only)`, priority: isMe ? 5 : 2, body: f(c.examples, c) });
+    }
+  }
+
+  const formatRule = isNarrator
+    ? `Write as the Narrator: third person, present tense. Describe the setting, atmosphere, sounds, smells, tension, and what the cast visibly does. At most a line or two of dialogue from the cast. Never write ${user}'s words, actions or feelings. End on a moment that invites ${user} to act.`
+    : mode === "texting"
+      ? `This is a text-message conversation. Write exactly the way ${name} texts: their slang, punctuation habits, emoji only if it suits them. No narration, no actions, no asterisks. Separate multiple texts with a blank line.`
+      : `Describe ${name}'s actions, expressions and body language in *asterisks* and put spoken words in "quotes". Show feelings through behavior and subtext, not by announcing them.`;
 
   const rules = [
-    `- You ARE ${name}. Stay in character no matter what. React the way ${name} genuinely would, with their own opinions, moods, flaws and agenda — not as a helpful assistant.`,
+    isNarrator
+      ? `- You are the Narrator of this story. You are not a character and you never speak to ${user} directly.`
+      : `- You ARE ${name}. Stay in character no matter what. React the way ${name} genuinely would, with their own opinions, moods, flaws and agenda — not as a helpful assistant.`,
+    group && !isNarrator ? `- Write ONLY ${name}'s message this turn. Other people in the scene can be mentioned through ${name}'s eyes, but never write their dialogue.` : null,
     `- Never write ${user}'s dialogue, actions, thoughts or feelings. Stop at a natural point where it's ${user}'s turn.`,
-    `- Keep ${name}'s voice consistent with "How ${name} talks" and the example lines below.`,
     `- ${formatRule}`,
     `- ${len.rule}`,
-    "- Move the scene forward. Don't repeat earlier lines or phrases. Don't summarize.",
+    "- Move the story forward. Don't repeat earlier lines or phrases. Don't summarize.",
     "- No meta commentary, disclaimers, or mentions of being an AI.",
-    settings.profanity === "allow" ? `- Swearing is fine when it fits ${name}; don't overdo it.` : "- Avoid profanity.",
-  ].join("\n");
+    settings.profanity === "allow" ? "- Swearing is fine when it fits the character; don't overdo it." : "- Avoid profanity.",
+  ].filter(Boolean).join("\n");
+
+  const intro = group
+    ? `This is a private, fictional, immersive interactive story with ${user}. Cast: ${cast.map((c) => c.name).join(", ")}${chat.narrator ? ", plus a Narrator" : ""}. ${user} plays themself. Each turn you write as exactly one of them, as instructed at the end of ${user}'s latest message.`
+    : `You are ${name}, in a private, fictional, ongoing roleplay with ${user}. You write only ${name}'s side.`;
+
+  const boundaries = [...new Set(cast.map((c) => f(c.boundaries, c)).filter(Boolean))].join("\n");
 
   const sections = [
-    { title: "", priority: 10, body: `You are ${name}, in a private, fictional, ongoing roleplay with ${user}. You write only ${name}'s side.` },
-    { title: `Who ${name} is`, priority: 9, body: f(ch.summary) },
-    { title: `${name}'s personality`, priority: 8, body: f(ch.personality) },
-    { title: `How ${name} talks`, priority: 8, body: f(ch.speech) },
-    { title: `${name}'s appearance`, priority: 4, body: f(ch.appearance) },
-    { title: `About ${user}`, priority: 6, body: f(profile.persona) },
-    { title: "The situation", priority: 7, body: f(ch.scenario) },
-    { title: `What ${name} remembers`, priority: 8, body: f(chat.memory) },
+    { title: "", priority: 10, body: intro },
+    ...castSections,
+    { title: `About ${user}`, priority: 9, body: [userLine, adult, f(profile.persona)].filter(Boolean).join(" ") },
+    { title: "The situation", priority: 7, body: f(cast[0]?.scenario, cast[0]) },
+    { title: "The story so far", priority: 9, body: chat.summary },
+    { title: "Remember", priority: 8, body: f(chat.memory) },
     { title: "World notes", priority: 3, body: loreHits.join("\n") },
-    { title: `Examples of ${name}'s voice (for style only — don't repeat them)`, priority: 5, body: f(ch.examples) },
     { title: "Tone", priority: 9, body: toneInstructions(chat.tone) },
-    { title: "Writing style", priority: 6, body: [f(ch.style), settings.globalStyle].filter(Boolean).join("\n") },
-    { title: "Content boundaries", priority: 9, body: f(ch.boundaries) },
+    { title: "Writing style", priority: 6, body: [...new Set(cast.map((c) => f(c.style, c)).filter(Boolean)), settings.globalStyle].filter(Boolean).join("\n") },
+    { title: "Content boundaries", priority: 9, body: boundaries },
+    { title: `Hard rules from ${user} — never break these`, priority: 10, body: avoids.map((a) => `- ${a}`).join("\n") },
     { title: "Rules", priority: 10, body: rules },
   ];
 
-  // Budget: 4096 total = system + history + reply + a little slack
-  const budget = CONTEXT_TOKENS - maxTokens - 96;
+  const budget = contextTokens(settings) - maxTokens - 96;
   const system = assemble(sections, Math.floor(budget * 0.5 * 3.6));
 
-  // Reminder rides with the latest user turn (WebLLM only allows one system message, at the top)
-  const voiceCue = (f(ch.speech) || f(ch.personality)).replace(/\s+/g, " ").slice(0, 180);
-  const reminder = `[Reply as ${name} only${voiceCue ? ` — remember: ${voiceCue}` : ""}. Don't write ${user}'s part.${chat.direction ? ` Direction for this reply: ${chat.direction}` : ""}]`;
+  // A short reminder rides with the latest user turn (models pay most attention there)
+  const voiceCue = me ? (f(me.speech) || f(me.personality)).replace(/\s+/g, " ").slice(0, 160) : "";
+  const avoidCue = avoids.join(" ").replace(/\s+/g, " ").slice(0, 220);
+  const reminder = "[" + [
+    isNarrator ? "Now write the Narrator's next passage only: describe what happens next" : `Now write ${name}'s next message only${voiceCue ? ` (voice: ${voiceCue})` : ""}`,
+    `Don't write ${user}'s part${group && !isNarrator ? " or anyone else's" : ""}`,
+    avoidCue ? `Never: ${avoidCue}` : "",
+    chat.direction ? `Direction: ${chat.direction}` : "",
+  ].filter(Boolean).join(". ") + ".]";
 
-  // Turn stored messages into model turns (merge same-role neighbours; must end with a user turn)
-  const raw = chat.messages.map((m) => ({ role: m.role, content: msgText(m) || "…" }));
+  // Stored messages → model turns. In group scenes, label who said what.
+  const label = (m) => {
+    const t = msgText(m) || "…";
+    if (m.role === "user" || !group) return t;
+    return m.speaker === "narrator" ? `(Narrator) ${t}` : `${speakerName(m, cast)}: ${t}`;
+  };
+  const raw = chat.messages.map((m) => ({ role: m.role, content: label(m) }));
   if (extraUserText) raw.push({ role: "user", content: extraUserText });
   if (!raw.length || raw[raw.length - 1].role !== "user") raw.push({ role: "user", content: "(Continue.)" });
 
@@ -196,7 +309,7 @@ export function buildChatPrompt({ ch, chat, profile, settings, lore, extraUserTe
     kept.unshift(raw[i]);
     room -= cost;
   }
-  const droppedCount = raw.length - kept.length;
+  const droppedCount = Math.max(0, chat.messages.length - (kept.length - (raw.length - chat.messages.length)));
   if (kept[0]?.role === "assistant") kept.unshift({ role: "user", content: "(The scene begins.)" });
 
   const merged = [];
@@ -207,26 +320,47 @@ export function buildChatPrompt({ ch, chat, profile, settings, lore, extraUserTe
   }
   merged[merged.length - 1].content += "\n\n" + reminder;
 
+  const stop = [`\n${user}:`, "\nUser:", ...others.slice(0, 2).map((c) => `\n${firstName(c.name)}:`)];
   return {
     messages: [{ role: "system", content: system }, ...merged],
     maxTokens,
-    // index of the first stored message the model can still "see" (for the memory divider)
-    firstVisibleIndex: droppedCount,
-    stop: [`\n${user}:`, `\n**${user}**:`, "\nUser:", "<|im_end|>"],
+    firstVisibleIndex: droppedCount, // first stored message the model can still "see"
+    stop,
     system,
   };
 }
 
-/** Clean up a reply: drop "Name:" prefixes and anything where it starts speaking for the user */
-export function cleanReply(text, charName, userName) {
+/** Clean up a reply: drop "Name:" prefixes and anything where it starts writing for someone else */
+export function cleanReply(text, speakerName, userName, otherNames = []) {
   let t = text;
-  const names = [charName, charName.split(/\s+/)[0]].filter(Boolean).map(reEscape).join("|");
-  t = t.replace(new RegExp(`^\\s*\\**(${names})\\**\\s*:\\s*`, "i"), "");
-  t = t.replace(/^\s*\[(Reply as|Direction)[^\]]*\]\s*/i, "");
-  const userLine = new RegExp(`\\n\\s*\\**(${reEscape(userName)}|User|You)\\**\\s*:`, "i");
-  const cut = t.search(userLine);
+  const own = [speakerName, firstName(speakerName), "Narrator"].filter(Boolean).map(reEscape).join("|");
+  t = t.replace(new RegExp(`^\\s*(\\((${own})\\)|\\**(${own})\\**\\s*:)\\s*`, "i"), "");
+  t = t.replace(/^\s*\[(Now write|Reply as|Direction)[^\]]*\]\s*/i, "");
+  const cutNames = [userName, "User", "You", ...otherNames.flatMap((n) => [n, firstName(n)])].filter(Boolean).map(reEscape).join("|");
+  const cut = t.search(new RegExp(`\\n\\s*(\\**(${cutNames})\\**\\s*:|\\(Narrator\\))`, "i"));
   if (cut > 0) t = t.slice(0, cut);
-  return t.replace(/\s+$/, "").replace(/^\s+/, "");
+  return t.trim();
+}
+
+/* ---------- Automatic memory: fold old messages into "the story so far" ---------- */
+export function buildSummaryPrompt({ chat, cast, profile, settings, upTo }) {
+  const { user } = userIdentity(profile);
+  const room = (contextTokens(settings) - 700) * 3.2;
+  const lines = [];
+  let used = 0, end = chat.summarizedUpTo;
+  for (let i = chat.summarizedUpTo; i < upTo; i++) {
+    const m = chat.messages[i];
+    const line = `${m.role === "user" ? user : speakerName(m, cast)}: ${msgText(m)}`;
+    if (used + line.length > room && lines.length) break;
+    lines.push(line); used += line.length; end = i + 1;
+  }
+  return {
+    upTo: end,
+    messages: [
+      { role: "system", content: `You keep a running summary of an interactive story so its characters never forget what happened. Write in past tense, third person, as compact notes. Keep: key events, relationships and how they changed, promises, secrets, injuries, places, names, and how ${user} feels. Leave out small talk. At most 200 words. Output only the summary.` },
+      { role: "user", content: `Summary so far:\n${chat.summary || "(nothing yet)"}\n\nWhat happened next:\n${lines.join("\n")}\n\nWrite the updated summary.` },
+    ],
+  };
 }
 
 /* ---------- Story prompt ---------- */
@@ -265,7 +399,7 @@ export function buildStoryPrompt({ story, cast, profile, settings, lore, continu
     { title: "Content", priority: 9, body: "All characters are adults (21+) and everything is consensual." + (settings.profanity === "allow" ? " Swearing is fine when natural." : " Avoid profanity.") },
   ];
 
-  const budget = CONTEXT_TOKENS - chunk.tokens - 96;
+  const budget = contextTokens(settings) - chunk.tokens - 96;
   const system = assemble(sections, Math.floor(budget * 0.45 * 3.6));
 
   let userMsg;

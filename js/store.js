@@ -52,6 +52,8 @@ export function normalizeCharacter(c = {}) {
     appearance: c.appearance || "",
     scenario: c.scenario || "",
     greeting: c.greeting || "",
+    greetings: Array.isArray(c.greetings) ? c.greetings.map(String).filter((g) => g.trim()) : [],
+    avoid: c.avoid || "",
     boundaries: c.boundaries || DEFAULT_BOUNDARIES,
     style: c.style || c.styleOverride || "",
     defaults: normalizeTone(c.defaults),
@@ -63,14 +65,26 @@ export function normalizeCharacter(c = {}) {
 export function normalizeMessage(m = {}) {
   const alts = Array.isArray(m.alts) && m.alts.length ? m.alts.map(String) : [String(m.content || "")];
   const altIdx = Math.min(Math.max(0, m.altIdx ?? alts.length - 1), alts.length - 1);
-  return { id: m.id || uid(), role: m.role === "user" ? "user" : "assistant", alts, altIdx, time: m.time || nowISO() };
+  const out = { id: m.id || uid(), role: m.role === "user" ? "user" : "assistant", alts, altIdx, time: m.time || nowISO() };
+  if (out.role === "assistant" && m.speaker) out.speaker = m.speaker; // character id or "narrator"
+  return out;
 }
 export const msgText = (m) => m.alts[m.altIdx] ?? "";
 
+export const THEMES = ["default", "neon", "road", "whiskey", "salt", "rain", "candle"];
 export function normalizeChat(c = {}) {
+  const cast = Array.isArray(c.cast) && c.cast.length ? [...new Set(c.cast)] : [c.characterId].filter(Boolean);
   return {
     id: c.id || uid(),
-    characterId: c.characterId,
+    characterId: cast[0],
+    cast,
+    narrator: !!c.narrator,
+    chimeIn: c.chimeIn !== false,
+    summary: c.summary || "",
+    summarizedUpTo: Number.isInteger(c.summarizedUpTo) ? c.summarizedUpTo : 0,
+    avoid: c.avoid || "",
+    theme: THEMES.includes(c.theme) ? c.theme : "default",
+    bg: c.bg || "",
     messages: Array.isArray(c.messages) ? c.messages.map(normalizeMessage) : [],
     mode: c.mode === "texting" ? "texting" : "roleplay",
     length: ["short", "medium", "long"].includes(c.length) ? c.length : "medium",
@@ -116,7 +130,7 @@ export function normalizeStory(s = {}) {
 function normalizeLibrary(L = {}) {
   const chats = {};
   for (const c of Object.values(L.chats || {})) {
-    if (c && c.characterId) { const n = normalizeChat(c); chats[n.id] = n; }
+    if (c && (c.characterId || c.cast?.length)) { const n = normalizeChat(c); chats[n.id] = n; }
   }
   return {
     characters: (L.characters || []).map(normalizeCharacter),
@@ -131,6 +145,10 @@ function normalizeProfile(p = {}) {
     id: p.id || uid(),
     name: p.name || "You",
     persona: p.persona ?? p.bio ?? "",
+    pronouns: p.pronouns || "",
+    age: p.age || "",
+    avoid: p.avoid || "",
+    banned: p.banned || "",
     theme: ["dark", "light", "system"].includes(p.theme) ? p.theme : "system",
     accent: p.accent || p.colors?.accent || "#86b49a",
     readingFont: p.readingFont === "sans" ? "sans" : "serif",
@@ -149,6 +167,10 @@ function normalizeSettings(s = {}) {
     globalStyle: s.globalStyle || "",
     profanity: s.profanity === "avoid" ? "avoid" : "allow",
     enterToSend: s.enterToSend ?? !matchMedia("(pointer: coarse)").matches,
+    provider: s.provider === "online" ? "online" : "local",
+    onlineUrl: s.onlineUrl || "https://openrouter.ai/api/v1",
+    onlineKey: s.onlineKey || "",
+    onlineModel: s.onlineModel || "",
   };
 }
 
@@ -230,7 +252,11 @@ export function saveCharacter(c) {
 export function deleteCharacter(id) {
   const L = lib();
   L.characters = L.characters.filter((c) => c.id !== id);
-  for (const [cid, chat] of Object.entries(L.chats)) if (chat.characterId === id) delete L.chats[cid];
+  for (const [cid, chat] of Object.entries(L.chats)) {
+    if (!chat.cast.includes(id)) continue;
+    chat.cast = chat.cast.filter((x) => x !== id);
+    if (!chat.cast.length) delete L.chats[cid]; else chat.characterId = chat.cast[0];
+  }
   L.stories.forEach((s) => { s.castIds = s.castIds.filter((x) => x !== id); });
   saveLib();
 }
@@ -238,11 +264,13 @@ export function deleteCharacter(id) {
 // Chats
 export const getChat = (id) => lib().chats[id];
 export const chatsFor = (characterId) =>
-  Object.values(lib().chats).filter((c) => c.characterId === characterId).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  Object.values(lib().chats).filter((c) => c.cast.includes(characterId)).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
 export const recentChats = () => Object.values(lib().chats).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
-export function createChat(ch, greetingText) {
-  const chat = normalizeChat({ characterId: ch.id, tone: ch.defaults });
-  if (greetingText) chat.messages.push(normalizeMessage({ role: "assistant", content: greetingText }));
+/** greetings: array of opening lines (first is default, the rest are swipeable alternatives) */
+export function createChat(ch, greetings = [], extra = {}) {
+  const chat = normalizeChat({ characterId: ch.id, tone: ch.defaults, ...extra });
+  const g = (Array.isArray(greetings) ? greetings : [greetings]).filter((x) => x && x.trim());
+  if (g.length) chat.messages.push(normalizeMessage({ role: "assistant", speaker: ch.id, alts: g, altIdx: 0 }));
   lib().chats[chat.id] = chat;
   saveLib();
   return chat;
@@ -283,14 +311,14 @@ export function exportAll() {
     profiles: getProfiles(),
     activeProfileId: getActiveProfileId(),
     libraries: getProfiles().map((p) => ({ profileId: p.id, library: read("library_" + p.id, {}) })),
-    settings: getSettings(),
+    settings: { ...getSettings(), onlineKey: "" }, // the API key never goes into backup files
   };
 }
 export function importAll(pack) {
   if (!pack || !Array.isArray(pack.profiles)) throw new Error("That file isn't a My Writer backup.");
   write("profiles", pack.profiles.map(normalizeProfile));
   for (const item of pack.libraries || []) write("library_" + item.profileId, normalizeLibrary(item.library));
-  if (pack.settings) write("settings", normalizeSettings(pack.settings));
+  if (pack.settings) write("settings", normalizeSettings({ ...pack.settings, onlineKey: getSettings().onlineKey }));
   const ids = getProfiles().map((p) => p.id);
   write("activeProfileId", ids.includes(pack.activeProfileId) ? pack.activeProfileId : ids[0]);
   libCache = null;
