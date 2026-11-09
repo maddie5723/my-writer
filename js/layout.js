@@ -61,8 +61,9 @@ export function empty(emoji, title, text, actions = []) {
 }
 
 /* ---------- Tone sliders (words, not just numbers) ---------- */
-export function toneSliders(tone, onChange) {
-  return h("div", { class: "tones" }, Object.entries(TONE_META).map(([k, m]) => {
+export function toneSliders(tone, onChange, { chat = true } = {}) {
+  return h("div", { class: "tones" }, Object.entries(TONE_META).filter(([, m]) => chat || !m.chatOnly).map(([k, m]) => {
+    if (tone[k] == null) tone[k] = 6;
     const val = h("span", { class: "tone-val" }, toneWord(k, tone[k]));
     const input = h("input", {
       type: "range", min: 0, max: 10, step: 0.5, value: tone[k], "aria-label": m.label,
