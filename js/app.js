@@ -56,6 +56,7 @@ function renderChats() {
       cast.length > 1 ? h("div", { class: "stack-avatars md" }, cast.slice(0, 2).map((x) => avatar(x, "sm"))) : avatar(cast[0], "md"),
       h("div", { class: "convo-text" },
         h("div", { class: "convo-top" }, h("b", {}, cast.length > 1 ? namesLine(cast) : cast[0].name), h("span", {}, timeAgo(c.updatedAt))),
+        c.title ? h("div", { class: "convo-title" }, c.title) : null,
         h("div", { class: "convo-last" }, `${who}${msgText(last).replace(/[*]/g, "").replace(/\s+/g, " ").slice(0, 120)}`)));
   };
 

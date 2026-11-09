@@ -84,10 +84,11 @@ export function esc(s = "") {
  */
 export function formatRP(text = "") {
   // one pass, so the markup we add can never be re-matched by a later rule
+  //   ((thought)) -> the character's private thoughts
   return esc(text).replace(
-    /\*\*([^*\n]+)\*\*|\*([^*\n][^*]*?)\*|(“[^”]*”|"[^"\n]*")/g,
-    (m, bold, act, say) =>
-      bold ? `<strong>${bold}</strong>` : act ? `<em class="act">${act}</em>` : `<span class="say">${say}</span>`);
+    /\(\(([^\n]+?)\)\)|\*\*([^*\n]+)\*\*|\*([^*\n][^*]*?)\*|(“[^”]*”|"[^"\n]*")/g,
+    (m, thought, bold, act, say) =>
+      thought ? `<span class="thought">${thought}</span>` : bold ? `<strong>${bold}</strong>` : act ? `<em class="act">${act}</em>` : `<span class="say">${say}</span>`);
 }
 
 export function initials(name = "?") {
