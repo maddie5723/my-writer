@@ -1,7 +1,7 @@
 /* =========================================================
    writer.js — stories list and the story editor.
    ========================================================= */
-import { h, icon, iconBtn, avatar, toast, sheet, confirmDialog, autosize, field, segmented, downloadFile, debounce, timeAgo, popover, tabs } from "./ui.js";
+import { h, icon, iconBtn, avatar, toast, sheet, confirmDialog, autosize, field, segmented, downloadFile, debounce, timeAgo, popover, tabs, setKids } from "./ui.js";
 import { page, empty, go, goBack, replaceTo, toneSliders, modelStatusCard } from "./layout.js";
 import { lib, getStory, saveStory, newStory, deleteStory, getProfile, getSettings, getCharacter } from "./store.js";
 import { buildStoryPrompt, temperatureFor } from "./prompts.js";
@@ -68,7 +68,7 @@ export function renderStory(id) {
   const castRow = h("div", { class: "cast-row" });
   const drawCast = () => {
     const cast = story.castIds.map(getCharacter).filter(Boolean);
-    castRow.replaceChildren(
+    setKids(castRow, 
       ...cast.map((c) => h("span", { class: "cast-chip" }, avatar(c, "xxs"), c.name)),
       h("button", { class: "chip-btn", type: "button", onClick: () => openSetup(cast.length ? 0 : 1) }, icon("sliders", 15), cast.length ? "Setup" : "Add cast & plot"));
   };

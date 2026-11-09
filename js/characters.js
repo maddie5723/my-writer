@@ -1,12 +1,13 @@
 /* =========================================================
    characters.js — character grid, profile page and editor.
    ========================================================= */
-import { h, icon, iconBtn, avatar, toast, confirmDialog, field, autosize, imageToDataURL, downloadFile, timeAgo, popover, tabs } from "./ui.js";
+import { h, icon, iconBtn, avatar, toast, confirmDialog, field, autosize, imageToDataURL, downloadFile, timeAgo, popover, tabs, setKids } from "./ui.js";
 import { page, empty, go, goBack, replaceTo, toneSliders } from "./layout.js";
 import {
   lib, getCharacter, saveCharacter, deleteCharacter, chatsFor, createChat, deleteChat,
-  normalizeCharacter, sampleCharacter, getProfile, msgText, DEFAULT_BOUNDARIES,
+  normalizeCharacter, sampleCharacter, getProfile, msgText, DEFAULT_BOUNDARIES, saveLore,
 } from "./store.js";
+import { rerender } from "./app.js";
 import { fill } from "./prompts.js";
 import { newChatLike, namesLine } from "./chat.js";
 
@@ -38,7 +39,7 @@ export function renderCharacters() {
 
   const more = iconBtn("more", "More", (e) => popover(e.currentTarget, [
     { label: "New character", icon: "plus", onClick: () => go("#/c/new") },
-    { label: "Import character card", icon: "upload", onClick: () => fileInput.click() },
+    { label: "Import character or pack", icon: "upload", onClick: () => fileInput.click() },
     { label: "Add sample (Wren)", icon: "sparkles", onClick: addSampleCharacter },
   ]), "ghost");
 
@@ -93,6 +94,35 @@ function pngText(buf) {
 }
 const b64json = (s) => JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(s.trim()), (c) => c.charCodeAt(0))));
 
+/** Turn any supported card shape into our character fields */
+function cardToCharacter(raw, pic = "") {
+  const d = raw.data && raw.spec ? raw.data : raw; // our export or "character card v2/v3"
+  return {
+    name: d.name,
+    avatar: pic || (d.avatar?.startsWith?.("data:") ? d.avatar : ""),
+    summary: d.summary || d.creator_notes || "",
+    tags: d.tags,
+    personality: [d.personality, d.description && !d.summary ? d.description : ""].filter(Boolean).join("\n\n"),
+    speech: d.speech || "",
+    examples: d.examples || (d.mes_example || "").replace(/<START>/gi, "").trim(),
+    appearance: d.appearance || "",
+    scenario: d.scenario || "",
+    greeting: d.greeting || d.first_mes || "",
+    greetings: d.greetings || d.alternate_greetings || [],
+    avoid: d.avoid || "",
+    boundaries: d.boundaries,
+    style: d.style || d.system_prompt || "",
+    defaults: d.defaults,
+  };
+}
+
+/** Add a character, or update the one with the same name (keeping its photo and chats) */
+function upsertCharacter(fields) {
+  const existing = lib().characters.find((c) => c.name.trim().toLowerCase() === String(fields.name || "").trim().toLowerCase());
+  if (existing) return saveCharacter(normalizeCharacter({ ...existing, ...fields, id: existing.id, avatar: fields.avatar || existing.avatar, createdAt: existing.createdAt }));
+  return saveCharacter(normalizeCharacter(fields));
+}
+
 async function importCard(file) {
   if (!file) return;
   try {
@@ -106,28 +136,29 @@ async function importCard(file) {
     } else {
       raw = JSON.parse(await file.text());
     }
-    const d = raw.data && raw.spec ? raw.data : raw; // our export or "character card v2/v3"
-    const saved = saveCharacter(normalizeCharacter({
-      name: d.name,
-      avatar: pic || (d.avatar?.startsWith?.("data:") ? d.avatar : ""),
-      summary: d.summary || d.creator_notes || "",
-      tags: d.tags,
-      personality: [d.personality, d.description && !d.summary ? d.description : ""].filter(Boolean).join("\n\n"),
-      speech: d.speech || "",
-      examples: d.examples || (d.mes_example || "").replace(/<START>/gi, "").trim(),
-      appearance: d.appearance || "",
-      scenario: d.scenario || "",
-      greeting: d.greeting || d.first_mes || "",
-      greetings: d.greetings || d.alternate_greetings || [],
-      avoid: d.avoid || "",
-      boundaries: d.boundaries,
-      style: d.style || d.system_prompt || "",
-      defaults: d.defaults,
-    }));
+
+    // A pack: { characters: [...], lore: [...] } or just [...]
+    const list = Array.isArray(raw) ? raw : Array.isArray(raw.characters) ? raw.characters : null;
+    if (list) {
+      const chars = list.filter((c) => c && (c.name || c.data?.name)).map((c) => upsertCharacter(cardToCharacter(c)));
+      let loreCount = 0;
+      for (const e of Array.isArray(raw.lore) ? raw.lore : []) {
+        if (!e?.title) continue;
+        const same = lib().lore.find((x) => x.title.trim().toLowerCase() === e.title.trim().toLowerCase());
+        saveLore({ ...e, id: same?.id });
+        loreCount++;
+      }
+      if (!chars.length && !loreCount) throw new Error("empty pack");
+      toast(`Added ${chars.length} character${chars.length === 1 ? "" : "s"}${loreCount ? ` and ${loreCount} lore entries` : ""}`, { ms: 4000 });
+      rerender();
+      return;
+    }
+
+    const saved = upsertCharacter(cardToCharacter(raw, pic));
     toast(`Imported ${saved.name}`);
     go(`#/c/${saved.id}`);
   } catch {
-    toast("That file isn't a character card I can read.", { type: "error" });
+    toast("That file isn't a character card or pack I can read.", { type: "error" });
   }
 }
 
@@ -254,7 +285,7 @@ export function renderCharacterEditor(id) {
   // extra opening lines: swipe ‹ › between them at the start of a new chat
   const altGreetings = () => {
     const wrap = h("div", { class: "field" });
-    const draw = () => wrap.replaceChildren(
+    const draw = () => setKids(wrap, 
       h("span", { class: "field-label" }, "Alternate first messages"),
       h("span", { class: "field-hint" }, "Optional. New chats let you swipe between these openings."),
       ...draft.greetings.map((g, i) => {

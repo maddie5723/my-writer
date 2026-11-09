@@ -342,3 +342,8 @@ export function fillRange(el) {
   upd();
   return el;
 }
+
+/** Like el.replaceChildren(), but skips empty values (which would otherwise show up as the text "null") */
+export function setKids(el, ...kids) {
+  el.replaceChildren(...kids.flat(Infinity).filter((k) => k != null && k !== false));
+}
