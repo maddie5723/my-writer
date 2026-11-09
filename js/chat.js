@@ -2,7 +2,7 @@
    chat.js — immersive chat / scene with one or more characters
    plus an optional Narrator. Styled like a messaging app.
    ========================================================= */
-import { h, icon, iconBtn, avatar, formatRP, toast, sheet, confirmDialog, promptDialog, autosize, field, segmented, toggle, downloadFile, debounce, popover, tabs, haptic, imageToDataURL } from "./ui.js";
+import { h, icon, iconBtn, avatar, formatRP, toast, sheet, confirmDialog, promptDialog, autosize, field, segmented, toggle, downloadFile, debounce, popover, tabs, haptic, imageToDataURL, setKids } from "./ui.js";
 import { go, goBack, replaceTo, empty, page, toneSliders, modelStatusCard } from "./layout.js";
 import { getChat, getCharacter, getProfile, getSettings, lib, touchChat, deleteChat, normalizeMessage, msgText, createChat } from "./store.js";
 import { buildChatPrompt, buildSummaryPrompt, cleanReply, temperatureFor, pickSpeaker, mentioned, bannedHit, speakerName, firstName, fill } from "./prompts.js";
@@ -53,7 +53,7 @@ export function renderChat(chatId) {
   const who = h("button", { class: "chat-who", type: "button", onClick: () => (isGroup() ? openScene(0) : go(`#/c/${cast()[0].id}`)) });
   const drawHeader = () => {
     const c = cast();
-    who.replaceChildren(
+    setKids(who, 
       c.length > 1 ? h("div", { class: "stack-avatars" }, c.slice(0, 3).map((x) => avatar(x, "xs"))) : avatar(c[0], "sm"),
       h("div", { class: "chat-who-text" }, h("b", {}, c.length > 1 ? namesLine(c) : c[0].name), status));
     idleStatus();
@@ -68,7 +68,7 @@ export function renderChat(chatId) {
   const intro = h("div", { class: "chat-intro" });
   const drawIntro = () => {
     const c = cast();
-    intro.replaceChildren(
+    setKids(intro, 
       c.length > 1 ? h("div", { class: "stack-avatars big" }, c.slice(0, 4).map((x) => avatar(x, "lg"))) : avatar(c[0], "lg"),
       h("b", {}, c.length > 1 ? namesLine(c) : c[0].name),
       c[0].scenario ? h("div", { class: "muted small" }, fill(c[0].scenario, c[0].name, userName).slice(0, 180)) : c[0].summary ? h("div", { class: "muted small" }, c[0].summary.slice(0, 160)) : null);
@@ -216,12 +216,13 @@ export function renderChat(chatId) {
   function drawCastBar() {
     const busy = busyForUser();
     const c = cast();
-    castBar.replaceChildren(
+    castBar.replaceChildren(...[
       ...c.map((x) => h("button", { class: "cast-btn", type: "button", disabled: busy, title: `${x.name} responds`, onClick: () => { haptic(); reply({ speaker: x }); } },
         avatar(x, "xs"), h("span", {}, firstName(x.name)))),
       chat.narrator && chat.mode !== "texting" ? h("button", { class: "cast-btn narr", type: "button", disabled: busy, title: "Narrator describes what happens", onClick: () => { haptic(); reply({ speaker: "narrator" }); } },
         h("span", { class: "narr-ic" }, "📖"), h("span", {}, "Narrator")) : null,
-      h("button", { class: "cast-btn add", type: "button", disabled: busy, "aria-label": "Add someone to the scene", onClick: (e) => addMenu(e.currentTarget) }, icon("plus", 18)));
+      h("button", { class: "cast-btn add", type: "button", disabled: busy, "aria-label": "Add someone to the scene", onClick: (e) => addMenu(e.currentTarget) }, icon("plus", 18)),
+    ].filter(Boolean));
   }
 
   function addMenu(anchor) {
@@ -390,7 +391,7 @@ export function renderChat(chatId) {
       const draw = () => {
         const inScene = cast();
         const others = lib().characters.filter((x) => !chat.cast.includes(x.id));
-        wrap.replaceChildren(
+        setKids(wrap, 
           h("div", { class: "group" }, inScene.map((x) => h("div", { class: "cast-row-item" },
             avatar(x, "sm"), h("span", { class: "grow" }, x.name),
             inScene.length > 1 ? h("button", { class: "text-btn danger", type: "button", onClick: () => { chat.cast = chat.cast.filter((id) => id !== x.id); saveSoon(); draw(); drawHeader(); drawIntro(); render(); } }, "Remove") : null))),
@@ -440,7 +441,7 @@ export function renderChat(chatId) {
         const f = e.target.files?.[0]; if (!f) return;
         try { chat.bg = await imageToDataURL(f, 900); touchChat(chat); applyLook(); draw(); } catch (err) { toast(err.message, { type: "error" }); }
       } });
-      const draw = () => wrap.replaceChildren(
+      const draw = () => setKids(wrap, 
         h("div", { class: "theme-grid" }, Object.entries(THEME_LABELS).map(([k, label]) => h("button", {
           class: `theme-swatch ${chat.theme === k ? "on" : ""}`, type: "button", "data-theme": k,
           onClick: () => { chat.theme = k; touchChat(chat); applyLook(); draw(); },
