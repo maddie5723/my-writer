@@ -61,6 +61,7 @@ export function renderCharacters() {
     body: chars.length ? [search, grid]
       : empty("🃏", "No characters yet", "Characters are who you chat and write with.",
         [h("a", { class: "btn primary wide", href: "#/c/new" }, "Create a character"),
+          h("button", { class: "btn ghost wide", type: "button", onClick: pickImportFile }, icon("upload", 18), "Import a character or pack"),
           h("button", { class: "btn ghost wide", type: "button", onClick: addSampleCharacter }, "Meet Wren (sample)")]),
   });
 }
@@ -93,6 +94,14 @@ function pngText(buf) {
   return out;
 }
 const b64json = (s) => JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(s.trim()), (c) => c.charCodeAt(0))));
+
+/** Open the file picker for a character card or pack (usable from anywhere) */
+export function pickImportFile() {
+  const input = h("input", { type: "file", accept: "application/json,.json,image/png,.png", hidden: true,
+    onChange: (e) => { importCard(e.target.files?.[0]); input.remove(); } });
+  document.body.append(input);
+  input.click();
+}
 
 /** Turn any supported card shape into our character fields */
 function cardToCharacter(raw, pic = "") {

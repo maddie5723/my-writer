@@ -4,7 +4,7 @@
 import { h, icon, iconBtn, avatar, toast, timeAgo, popover, haptic, sheet, toggle } from "./ui.js";
 import { page, empty, noteRoute, resetStack } from "./layout.js";
 import { getProfile, lib, recentChats, getCharacter, msgText } from "./store.js";
-import { renderCharacters, renderCharacter, renderCharacterEditor, addSampleCharacter, openLatestChat } from "./characters.js";
+import { renderCharacters, renderCharacter, renderCharacterEditor, addSampleCharacter, openLatestChat, pickImportFile } from "./characters.js";
 import { renderChat, newChatLike, namesLine } from "./chat.js";
 import { renderStories, renderStory } from "./writer.js";
 import { renderLore } from "./lore.js";
@@ -37,6 +37,7 @@ function renderChats() {
     L.characters.length ? { label: "New scene", icon: "users", onClick: newScene } : null,
     { label: "New character", icon: "plus", onClick: () => (location.hash = "#/c/new") },
     { label: "New story", icon: "pen", onClick: () => (location.hash = "#/stories") },
+    { label: "Import characters", icon: "upload", onClick: pickImportFile },
     L.characters.length ? null : { label: "Add sample character", icon: "sparkles", onClick: addSampleCharacter },
   ]);
   const plus = iconBtn("plus", "New", (e) => newMenu(e.currentTarget), "ghost");
@@ -192,5 +193,5 @@ applyTheme();
 route();
 
 if ("serviceWorker" in navigator && (location.protocol === "https:" || location.hostname === "localhost")) {
-  navigator.serviceWorker.register("./sw.js").catch(() => {});
+  navigator.serviceWorker.register("./sw.js", { updateViaCache: "none" }).catch(() => {});
 }
