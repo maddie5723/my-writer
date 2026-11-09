@@ -203,9 +203,21 @@ export function promptDialog(title, { value = "", placeholder = "", ok = "Save" 
 }
 
 /* ---------- Form building blocks ---------- */
+let fieldId = 0;
 export function field(label, control, hint) {
-  return h("label", { class: "field" },
-    h("span", { class: "field-label" }, label),
+  // Only a single text box / dropdown goes inside a <label>. Safari treats a tap on ANY button
+  // inside a label as a tap on the first one, so groups of buttons (colors, Dark/Light,
+  // On this device/Online…) would keep snapping back to the first choice.
+  const single = control instanceof HTMLInputElement || control instanceof HTMLTextAreaElement || control instanceof HTMLSelectElement;
+  if (single) {
+    return h("label", { class: "field" },
+      h("span", { class: "field-label" }, label),
+      hint ? h("span", { class: "field-hint" }, hint) : null,
+      control);
+  }
+  const id = `field-${++fieldId}`;
+  return h("div", { class: "field", role: "group", "aria-labelledby": id },
+    h("span", { class: "field-label", id }, label),
     hint ? h("span", { class: "field-hint" }, hint) : null,
     control);
 }
@@ -301,6 +313,8 @@ export function popover(anchor, items, { align = "end", title } = {}) {
   menu.querySelector(".pop-item")?.focus({ preventScroll: true });
 }
 window.addEventListener("hashchange", closePopover);
+// Leaving a page (back swipe, a link…) closes any open panel, so it can't sit on top of the next page and block taps
+window.addEventListener("hashchange", () => document.querySelectorAll("dialog[open]").forEach((d) => d.close()));
 
 /* ---------- Tabs inside a screen or sheet ---------- */
 export function tabs(items, initial = 0) {
