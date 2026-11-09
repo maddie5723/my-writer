@@ -1,8 +1,8 @@
 /* =========================================================
-   chat.js — full-screen chat with a character.
+   chat.js — full-screen chat, styled like a messaging app.
    ========================================================= */
-import { h, icon, iconBtn, avatar, formatRP, toast, sheet, confirmDialog, autosize, field, segmented, downloadFile, debounce } from "./ui.js";
-import { go, goBack, empty, page, toneSliders, modelStatusCard } from "./layout.js";
+import { h, icon, iconBtn, avatar, formatRP, toast, sheet, confirmDialog, autosize, field, segmented, downloadFile, debounce, popover, tabs, haptic } from "./ui.js";
+import { go, goBack, replaceTo, empty, page, toneSliders, modelStatusCard } from "./layout.js";
 import { getChat, getCharacter, getProfile, getSettings, lib, touchChat, deleteChat, normalizeMessage, msgText } from "./store.js";
 import { buildChatPrompt, cleanReply, temperatureFor } from "./prompts.js";
 import { generate, stopGenerating, isBusy, onStatus, ensureEngine } from "./ai.js";
@@ -11,42 +11,38 @@ import { startNewChat } from "./characters.js";
 export function renderChat(chatId) {
   const chat = getChat(chatId);
   const ch = chat && getCharacter(chat.characterId);
-  if (!chat || !ch) return page({ title: "Chat not found", back: "#/home", body: empty("🫥", "This chat doesn't exist anymore.") });
+  if (!chat || !ch) return page({ title: "Chat not found", back: "#/chats", body: empty("🫥", "This chat doesn't exist anymore.") });
 
   const profile = getProfile();
   const settings = getSettings();
   const userName = profile.name?.trim() || "User";
-  let activeMsgId = null;     // message whose action bar is open
-  let editingId = null;       // message being edited
-  let streamingId = null;     // message currently being written
-  const seen = new Set();     // messages already on screen (so only new ones animate in)
+  let editingId = null;     // message being edited
+  let streamingId = null;   // message currently being written
+  const seen = new Set();   // already on screen → don't re-animate
   const view = h("section", { class: "view chat" });
 
-  /* ---------- Top bar ---------- */
-  const subline = h("div", { class: "topbar-sub" }, ch.summary ? ch.summary.slice(0, 60) : "");
+  /* ---------- Header ---------- */
+  const status = h("div", { class: "chat-status" });
+  const setStatus = (text, live = false) => { status.textContent = text; status.classList.toggle("live", live); };
+  const idleStatus = () => setStatus(chat.mode === "texting" ? "Texting" : "Roleplay");
   const top = h("header", { class: "topbar chat-top" },
-    iconBtn("back", "Back", () => goBack(`#/c/${ch.id}`), "ghost back-btn"),
+    iconBtn("back", "Back", () => goBack("#/chats"), "ghost back-btn"),
     h("a", { class: "chat-who", href: `#/c/${ch.id}` }, avatar(ch, "sm"),
-      h("div", { class: "topbar-title" }, h("h1", {}, ch.name), subline)),
-    h("div", { class: "topbar-actions" },
-      iconBtn("sliders", "Scene & tone", openScene, "ghost"),
-      iconBtn("more", "More", openMenu, "ghost")));
+      h("div", { class: "chat-who-text" }, h("b", {}, ch.name), status)),
+    iconBtn("more", "Chat options", (e) => openMenu(e.currentTarget), "ghost"));
+  idleStatus();
 
-  const setSub = (text, live = false) => { subline.textContent = text; subline.classList.toggle("live", live); };
-  const idleSub = () => setSub(chat.mode === "texting" ? "Texting" : (ch.summary || "").slice(0, 60));
-  idleSub();
-
-  /* ---------- Message list ---------- */
+  /* ---------- Messages ---------- */
   const list = h("div", { class: "messages", role: "log", "aria-live": "polite" });
-  const intro = h("div", { class: "chat-intro" }, avatar(ch, "lg"), h("div", { class: "chat-intro-name" }, ch.name),
-    ch.scenario ? h("div", { class: "chat-intro-scn" }, ch.scenario.replace(/\{\{\s*user\s*\}\}/gi, userName).replace(/\{\{\s*char\s*\}\}/gi, ch.name).slice(0, 220)) : null);
-  const status = modelStatusCard({ onRetry: () => ensureEngine(settings.model).catch(() => {}) });
+  const fillNames = (t) => t.replace(/\{\{\s*user\s*\}\}/gi, userName).replace(/\{\{\s*char\s*\}\}/gi, ch.name);
+  const intro = h("div", { class: "chat-intro" }, avatar(ch, "lg"),
+    h("b", {}, ch.name),
+    ch.summary ? h("div", { class: "muted small" }, fillNames(ch.summary).slice(0, 160)) : null);
+  const statusCard = modelStatusCard({ onRetry: () => ensureEngine(settings.model).catch(() => {}) });
   const scroller = h("div", { class: "chat-scroll" }, h("div", { class: "chat-inner" }, intro, list));
 
   let stick = true;
-  scroller.addEventListener("scroll", () => {
-    stick = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 80;
-  }, { passive: true });
+  scroller.addEventListener("scroll", () => { stick = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 80; }, { passive: true });
   const toBottom = (force = false) => { if (force || stick) requestAnimationFrame(() => { scroller.scrollTop = scroller.scrollHeight; }); };
 
   function bubblesFor(m) {
@@ -58,71 +54,72 @@ export function renderChat(chatId) {
     return parts.map((p) => h("div", { class: "bubble", html: formatRP(p) }));
   }
 
-  function messageEl(m, i, isLastBot) {
+  function messageMenu(m, anchor, isLastBot) {
+    popover(anchor, [
+      { label: "Copy", icon: "copy", onClick: () => { navigator.clipboard?.writeText(msgText(m)); toast("Copied"); } },
+      { label: "Edit", icon: "edit", onClick: () => { editingId = m.id; render(); } },
+      isLastBot ? { label: "Reroll", icon: "refresh", onClick: () => reply({ regen: m }) } : null,
+      "-",
+      { label: "Delete", icon: "trash", danger: true, onClick: () => { chat.messages.splice(chat.messages.indexOf(m), 1); touchChat(chat); render(); } },
+    ], { align: m.role === "user" ? "end" : "start" });
+  }
+
+  function messageEl(m, i, { isLastBot, lastInGroup, firstInGroup }) {
     const mine = m.role === "user";
-    const wrap = h("div", { class: `msg ${mine ? "user" : "bot"} ${seen.has(m.id) ? "" : "new"}`, "data-id": m.id });
+    const cls = ["msg", mine ? "user" : "bot", seen.has(m.id) ? "" : "new", lastInGroup ? "last" : "", firstInGroup ? "first" : ""].join(" ");
+    const wrap = h("div", { class: cls, "data-id": m.id });
     seen.add(m.id);
 
     if (editingId === m.id) {
       const ta = h("textarea", { class: "input", value: msgText(m) });
-      autosize(ta, 400);
+      autosize(ta, 320);
       wrap.append(h("div", { class: "msg-edit" }, ta, h("div", { class: "row end" },
         h("button", { class: "btn ghost small", type: "button", onClick: () => { editingId = null; render(); } }, "Cancel"),
-        h("button", { class: "btn primary small", type: "button", onClick: () => {
-          m.alts[m.altIdx] = ta.value.trim(); editingId = null; touchChat(chat); render();
-        } }, "Save"))));
+        h("button", { class: "btn primary small", type: "button", onClick: () => { m.alts[m.altIdx] = ta.value.trim(); editingId = null; touchChat(chat); render(); } }, "Save"))));
       setTimeout(() => ta.focus(), 30);
       return wrap;
     }
 
-    const bubbles = h("div", { class: "bubbles", onClick: () => { if (m.id === streamingId) return; activeMsgId = activeMsgId === m.id ? null : m.id; render(); } }, bubblesFor(m));
-    if (!mine && chat.mode === "roleplay") wrap.append(avatar(ch, "xs"));
+    if (!mine) wrap.append(lastInGroup ? avatar(ch, "xs") : h("span", { class: "avatar-gap" }));
+    const bubbles = h("div", { class: "bubbles", onClick: (e) => {
+      if (m.id === streamingId || isBusy()) return;
+      messageMenu(m, e.target.closest(".bubble") || e.currentTarget, isLastBot);
+    } }, bubblesFor(m));
     wrap.append(bubbles);
 
-    // swipe between alternative replies
-    const extras = [];
-    if (!mine && m.alts.length > 1 && m.id !== streamingId) {
-      extras.push(h("div", { class: "alts" },
-        iconBtn("chevronLeft", "Previous version", () => { m.altIdx = (m.altIdx - 1 + m.alts.length) % m.alts.length; touchChat(chat); render(); }, "ghost tiny"),
-        h("span", {}, `${m.altIdx + 1} / ${m.alts.length}`),
-        iconBtn("chevronRight", "Next version", () => { m.altIdx = (m.altIdx + 1) % m.alts.length; touchChat(chat); render(); }, "ghost tiny")));
+    // versions + reroll under the latest reply
+    if (!mine && m.id !== streamingId && (m.alts.length > 1 || isLastBot)) {
+      wrap.append(h("div", { class: "msg-tools" },
+        m.alts.length > 1 ? iconBtn("chevronLeft", "Previous version", () => { m.altIdx = (m.altIdx - 1 + m.alts.length) % m.alts.length; touchChat(chat); render(); }, "ghost tiny") : null,
+        m.alts.length > 1 ? h("span", { class: "alt-count" }, `${m.altIdx + 1}/${m.alts.length}`) : null,
+        m.alts.length > 1 ? iconBtn("chevronRight", "Next version", () => { m.altIdx = (m.altIdx + 1) % m.alts.length; touchChat(chat); render(); }, "ghost tiny") : null,
+        isLastBot && !isBusy() ? iconBtn("refresh", "Reroll this reply", () => reply({ regen: m }), "ghost tiny") : null));
     }
-    if (isLastBot && !isBusy()) {
-      extras.push(h("button", { class: "chip-btn", type: "button", onClick: () => reply({ regen: m }) }, icon("refresh", 15), "Reroll"));
-    }
-    if (activeMsgId === m.id) {
-      extras.push(
-        h("button", { class: "chip-btn", type: "button", onClick: () => { navigator.clipboard?.writeText(msgText(m)); toast("Copied"); activeMsgId = null; render(); } }, icon("copy", 15), "Copy"),
-        h("button", { class: "chip-btn", type: "button", onClick: () => { editingId = m.id; activeMsgId = null; render(); } }, icon("edit", 15), "Edit"),
-        h("button", { class: "chip-btn danger", type: "button", onClick: () => {
-          chat.messages.splice(chat.messages.indexOf(m), 1); activeMsgId = null; touchChat(chat); render();
-          toast("Message deleted");
-        } }, icon("trash", 15), "Delete"));
-    }
-    if (extras.length) wrap.append(h("div", { class: "msg-extras" }, extras));
     return wrap;
   }
 
   function render() {
     const { firstVisibleIndex } = buildChatPrompt({ ch, chat, profile, settings, lore: lib().lore });
-    const lastBotIdx = chat.messages.map((m) => m.role).lastIndexOf("assistant");
+    const msgs = chat.messages;
+    const lastBotIdx = msgs.map((m) => m.role).lastIndexOf("assistant");
     const nodes = [];
-    chat.messages.forEach((m, i) => {
+    msgs.forEach((m, i) => {
       if (i === firstVisibleIndex && i > 0) {
-        nodes.push(h("button", { class: "memory-line", type: "button", onClick: openScene },
-          h("span", {}, `${ch.name} can't see messages above this line. Tap to add key facts to Memory.`)));
+        nodes.push(h("button", { class: "memory-line", type: "button", onClick: () => openScene(2) },
+          h("span", {}, `${ch.name} can't see above here · add key facts to Memory`)));
       }
-      nodes.push(messageEl(m, i, i === lastBotIdx && i === chat.messages.length - 1));
+      nodes.push(messageEl(m, i, {
+        isLastBot: i === lastBotIdx && i === msgs.length - 1,
+        firstInGroup: msgs[i - 1]?.role !== m.role,
+        lastInGroup: msgs[i + 1]?.role !== m.role,
+      }));
     });
     list.replaceChildren(...nodes);
+    if (!msgs.length) list.append(h("div", { class: "chat-empty muted small" }, `Say hi to ${ch.name}.`));
     view.classList.toggle("texting", chat.mode === "texting");
-    if (!chat.messages.length) {
-      list.append(h("div", { class: "chat-empty muted" }, `Say something to ${ch.name} to begin.`));
-    }
     syncComposer();
   }
 
-  // Fast path while streaming: only update the one bubble
   let raf = 0;
   function paintStreaming(m) {
     if (raf) return;
@@ -135,40 +132,46 @@ export function renderChat(chatId) {
   }
 
   /* ---------- Composer ---------- */
-  const input = h("textarea", { class: "composer-input", rows: 1, placeholder: `Message ${ch.name}…`, "aria-label": "Your message" });
-  const fit = autosize(input, 180);
-  const sendBtn = h("button", { class: "send-btn", type: "button", "aria-label": "Send", onClick: () => (isBusy() ? stopGenerating() : send()) }, icon("send", 20));
-  const contBtn = iconBtn("forward", `Let ${ch.name} keep going`, () => reply({ cont: true }), "ghost cont-btn");
+  const input = h("textarea", { class: "composer-input", rows: 1, placeholder: "Message", "aria-label": "Your message", enterkeyhint: settings.enterToSend ? "send" : "enter" });
+  const fit = autosize(input, 150);
+  const sendBtn = h("button", { class: "send-btn", type: "button", "aria-label": "Send", onClick: () => (isBusy() ? stopGenerating() : send()) }, icon("send", 18));
+  const plusBtn = iconBtn("plus", "More options", (e) => popover(e.currentTarget, [
+    { label: `Let ${ch.name.split(" ")[0]} keep going`, icon: "forward", onClick: () => reply({ cont: true }) },
+    { label: "Style & length", icon: "sliders", onClick: () => openScene(0) },
+    { label: "Tone", icon: "sparkles", onClick: () => openScene(1) },
+    { label: "Memory", icon: "bookmark", onClick: () => openScene(2) },
+  ], { align: "start" }), "plus-btn");
   input.addEventListener("keydown", (e) => {
     if (e.key === "Enter" && !e.shiftKey && !e.isComposing && settings.enterToSend) { e.preventDefault(); send(); }
   });
+  input.addEventListener("input", syncComposer);
   input.addEventListener("focus", () => toBottom(true));
 
   function syncComposer() {
     const busy = isBusy();
-    sendBtn.replaceChildren(icon(busy ? "stop" : "send", 20));
+    sendBtn.replaceChildren(icon(busy ? "stop" : "send", 18));
     sendBtn.setAttribute("aria-label", busy ? "Stop" : "Send");
     sendBtn.classList.toggle("stop", busy);
-    contBtn.disabled = busy || !chat.messages.length;
+    sendBtn.classList.toggle("ready", busy || !!input.value.trim());
+    plusBtn.disabled = busy;
   }
-
-  const composer = h("div", { class: "composer" }, contBtn, h("div", { class: "composer-field" }, input, sendBtn));
+  const composer = h("div", { class: "composer" }, plusBtn, h("div", { class: "composer-field" }, input, sendBtn));
 
   /* ---------- Sending & replying ---------- */
   function send() {
     const text = input.value.trim();
     if (!text) return;
-    if (isBusy()) { toast("Still writing… stop it first."); return; }
+    if (isBusy()) { toast("Still writing… tap ■ to stop."); return; }
+    haptic();
     chat.messages.push(normalizeMessage({ role: "user", content: text }));
     input.value = ""; fit();
-    activeMsgId = null;
     touchChat(chat);
     stick = true;
     reply();
   }
 
   async function reply({ regen = null, cont = false } = {}) {
-    if (isBusy()) { toast("Still writing… stop it first."); return; }
+    if (isBusy()) { toast("Still writing… tap ■ to stop."); return; }
     navigator.storage?.persist?.().catch(() => {});
 
     let target = regen;
@@ -182,11 +185,12 @@ export function renderChat(chatId) {
     });
 
     streamingId = target.id;
-    activeMsgId = null;
     render(); toBottom(true);
-    setSub("typing…", true);
-
-    const statusUnsub = onStatus((s) => { if (s.state === "loading") setSub(`waking up… ${Math.round(s.progress * 100)}%`, true); else if (s.state === "generating") setSub("typing…", true); });
+    setStatus("typing…", true);
+    const unsub = onStatus((s) => {
+      if (s.state === "loading") setStatus(`waking up… ${Math.round(s.progress * 100)}%`, true);
+      else if (s.state === "generating") setStatus("typing…", true);
+    });
     try {
       const pending = generate({
         modelKey: settings.model,
@@ -196,67 +200,67 @@ export function renderChat(chatId) {
         stop: prompt.stop,
         onText: (t) => { target.alts[target.altIdx] = cleanReply(t, ch.name, userName); paintStreaming(target); },
       });
-      syncComposer(); // generate() marks itself busy synchronously → show the Stop button now
+      syncComposer(); // generate() is busy now → show Stop
       const { text } = await pending;
       const final = cleanReply(text, ch.name, userName);
       if (final) target.alts[target.altIdx] = final;
-      else throw new Error("No reply came back. Try rerolling, or check the Scene settings.");
+      else throw new Error("No reply came back. Try rerolling.");
     } catch (err) {
-      // undo the empty slot
       if (!msgText(target)) {
         if (target.alts.length > 1) { target.alts.pop(); target.altIdx = target.alts.length - 1; }
         else chat.messages.splice(chat.messages.indexOf(target), 1);
       }
       toast(err.message, { type: "error", ms: 5000 });
     } finally {
-      statusUnsub();
+      unsub();
       streamingId = null;
       touchChat(chat);
-      if (list.isConnected) { idleSub(); render(); toBottom(); }
+      if (list.isConnected) { idleStatus(); render(); toBottom(); }
     }
   }
 
-  /* ---------- Scene sheet ---------- */
-  function openScene() {
+  /* ---------- Scene (small tabbed sheet) ---------- */
+  function openScene(startTab = 0) {
     const saveSoon = debounce(() => touchChat(chat), 300);
-    const memory = h("textarea", { class: "input", rows: 4, value: chat.memory,
-      placeholder: `e.g. ${userName} told ${ch.name} about their sister. They kissed once at the lighthouse and haven't talked about it.`,
-      onInput: () => { chat.memory = memory.value; saveSoon(); } });
-    const direction = h("textarea", { class: "input", rows: 2, value: chat.direction,
-      placeholder: `e.g. ${ch.name} finally admits they missed ${userName}.`,
-      onInput: () => { chat.direction = direction.value; saveSoon(); } });
-    autosize(memory, 300); autosize(direction, 200);
-
-    sheet({
-      title: "Scene",
-      body: h("div", { class: "form" },
-        field("Style", segmented([["roleplay", "Roleplay"], ["texting", "Texting"]], chat.mode, (v) => { chat.mode = v; saveSoon(); render(); }),
-          chat.mode === "texting" ? "Like a real text thread — no actions, just messages." : "Actions in *asterisks*, dialogue in quotes."),
+    const styleTab = () => {
+      const direction = h("textarea", { class: "input", rows: 2, value: chat.direction,
+        placeholder: `e.g. ${ch.name.split(" ")[0]} finally opens up`,
+        onInput: () => { chat.direction = direction.value; saveSoon(); } });
+      autosize(direction, 160);
+      return h("div", { class: "form" },
+        field("Style", segmented([["roleplay", "Roleplay"], ["texting", "Texting"]], chat.mode, (v) => { chat.mode = v; saveSoon(); render(); idleStatus(); })),
         field("Reply length", segmented([["short", "Short"], ["medium", "Medium"], ["long", "Long"]], chat.length, (v) => { chat.length = v; saveSoon(); })),
-        field("Memory", memory, `Facts ${ch.name} should never forget in this chat. Small models only see the last few pages of chat, so put important things here.`),
-        field("Direction", direction, "Optional nudge for the next replies. Clear it when you're done."),
-        h("div", { class: "field-label" }, "Tone"),
-        toneSliders(chat.tone, saveSoon)),
-      onClose: () => { touchChat(chat); render(); },
-    });
+        field("Direction", direction, "Optional nudge for the next replies."));
+    };
+    const toneTab = () => h("div", { class: "form" }, toneSliders(chat.tone, saveSoon));
+    const memoryTab = () => {
+      const memory = h("textarea", { class: "input", rows: 5, value: chat.memory,
+        placeholder: `e.g. ${userName} told ${ch.name.split(" ")[0]} about their sister. They kissed once and haven't talked about it.`,
+        onInput: () => { chat.memory = memory.value; saveSoon(); } });
+      autosize(memory, 260);
+      return h("div", { class: "form" }, field("Things to never forget", memory, `${ch.name} only sees the latest part of the chat. Facts here are always remembered.`));
+    };
+    const t = tabs([{ label: "Style", render: styleTab }, { label: "Tone", render: toneTab }, { label: "Memory", render: memoryTab }], startTab);
+    sheet({ title: "Scene", body: h("div", {}, t.bar, t.panel), onClose: () => { touchChat(chat); render(); } });
   }
 
-  /* ---------- Menu sheet ---------- */
-  function openMenu() {
-    const item = (ic, label, fn, cls = "") => h("button", { class: `menu-item ${cls}`, type: "button", onClick: () => { s.close(); fn(); } }, icon(ic, 20), h("span", {}, label));
-    const s = sheet({
-      title: ch.name,
-      body: h("div", { class: "menu" },
-        item("plus", `New chat with ${ch.name}`, () => startNewChat(ch)),
-        item("edit", `Edit ${ch.name}`, () => go(`#/c/${ch.id}/edit`)),
-        item("eye", "What the AI sees", showPrompt),
-        item("download", "Export chat as text", exportChat),
-        item("trash", "Delete this chat", async () => {
-          if (await confirmDialog("This conversation will be gone for good.", { title: "Delete chat?", ok: "Delete", danger: true })) {
-            deleteChat(chat.id); location.replace(`#/c/${ch.id}`);
-          }
-        }, "danger")),
-    });
+  /* ---------- ⋯ menu ---------- */
+  function openMenu(anchor) {
+    popover(anchor, [
+      { label: "Scene & tone", icon: "sliders", onClick: () => openScene(0) },
+      { label: "Memory", icon: "bookmark", onClick: () => openScene(2) },
+      "-",
+      { label: "New chat", icon: "plus", onClick: () => startNewChat(ch) },
+      { label: `View ${ch.name.split(" ")[0]}`, icon: "user", onClick: () => go(`#/c/${ch.id}`) },
+      { label: "What the AI sees", icon: "eye", onClick: showPrompt },
+      { label: "Export as text", icon: "download", onClick: exportChat },
+      "-",
+      { label: "Delete chat", icon: "trash", danger: true, onClick: async () => {
+        if (await confirmDialog("This conversation will be gone for good.", { title: "Delete chat?", ok: "Delete", danger: true })) {
+          deleteChat(chat.id); replaceTo("#/chats");
+        }
+      } },
+    ]);
   }
 
   function showPrompt() {
@@ -264,7 +268,7 @@ export function renderChat(chatId) {
     sheet({
       title: "What the AI sees", wide: true,
       body: h("div", {},
-        h("p", { class: "muted" }, `This is exactly what's sent to the model with your next message. It can see ${p.messages.length - 1} recent turns.`),
+        h("p", { class: "muted small" }, `Exactly what's sent with your next message. It can see ${p.messages.length - 1} recent turns.`),
         h("pre", { class: "prompt-view" }, p.messages.map((m) => `▌${m.role.toUpperCase()}\n${m.content}`).join("\n\n"))),
     });
   }
@@ -278,8 +282,6 @@ export function renderChat(chatId) {
   chat.messages.forEach((m) => seen.add(m.id));
   render();
   requestAnimationFrame(() => toBottom(true));
-  if (!chat.messages.length) setTimeout(() => input.focus(), 250);
-
-  view.append(top, scroller, status, composer);
+  view.append(top, scroller, statusCard, composer);
   return view;
 }

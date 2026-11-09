@@ -1,8 +1,8 @@
 /* =========================================================
    writer.js — stories list and the story editor.
    ========================================================= */
-import { h, icon, iconBtn, avatar, toast, sheet, confirmDialog, autosize, field, segmented, downloadFile, debounce, timeAgo } from "./ui.js";
-import { page, empty, go, goBack, toneSliders, modelStatusCard } from "./layout.js";
+import { h, icon, iconBtn, avatar, toast, sheet, confirmDialog, autosize, field, segmented, downloadFile, debounce, timeAgo, popover, tabs } from "./ui.js";
+import { page, empty, go, goBack, replaceTo, toneSliders, modelStatusCard } from "./layout.js";
 import { lib, getStory, saveStory, newStory, deleteStory, getProfile, getSettings, getCharacter } from "./store.js";
 import { buildStoryPrompt, temperatureFor } from "./prompts.js";
 import { generate, stopGenerating, isBusy, ensureEngine } from "./ai.js";
@@ -24,18 +24,18 @@ export function renderStories() {
 
   return page({
     title: "Stories", large: true,
-    actions: [h("button", { class: "btn primary small", type: "button", onClick: create }, icon("plus", 18), "New")],
+    actions: [iconBtn("plus", "New story", create, "ghost")],
     body: stories.length
-      ? h("div", { class: "story-grid" }, stories.map(card))
+      ? h("div", { class: "story-list" }, stories.map(card))
       : empty("📝", "Write something", "Set up a premise, cast your characters, and write together a few hundred words at a time. You can edit anything the AI writes.",
-        [h("button", { class: "btn primary", type: "button", onClick: create }, "Start a story")]),
+        [h("button", { class: "btn primary wide", type: "button", onClick: create }, "Start a story")]),
   });
 }
 
 /* ---------- Editor ---------- */
 export function renderStory(id) {
   const story = getStory(id);
-  if (!story) return page({ title: "Not found", back: "#/write", body: empty("🫥", "This story doesn't exist anymore.") });
+  if (!story) return page({ title: "Not found", back: "#/stories", body: empty("🫥", "This story doesn't exist anymore.") });
   const settings = getSettings();
   const profile = getProfile();
   const persist = debounce(() => saveStory(story), 500);
@@ -70,13 +70,13 @@ export function renderStory(id) {
     const cast = story.castIds.map(getCharacter).filter(Boolean);
     castRow.replaceChildren(
       ...cast.map((c) => h("span", { class: "cast-chip" }, avatar(c, "xxs"), c.name)),
-      h("button", { class: "chip-btn", type: "button", onClick: openSetup }, icon("sliders", 15), cast.length ? "Setup" : "Setup & cast"));
+      h("button", { class: "chip-btn", type: "button", onClick: () => openSetup(cast.length ? 0 : 1) }, icon("sliders", 15), cast.length ? "Setup" : "Add cast & plot"));
   };
   drawCast();
 
   const status = modelStatusCard({ onRetry: () => ensureEngine(settings.model).catch(() => {}) });
   const scroller = h("div", { class: "view-body" }, h("div", { class: "container narrow" }, title, castRow, text));
-  const dock = h("div", { class: "story-dock" }, status, h("div", { class: "row" }, direction, writeBtn), h("div", { class: "row between" }, counter, h("span", { class: "muted small" }, "Edits save automatically")));
+  const dock = h("div", { class: "story-dock" }, status, h("div", { class: "row" }, direction, writeBtn), h("div", { class: "row between dock-meta" }, counter, h("span", {}, "Saves automatically")));
 
   async function write() {
     if (isBusy()) { toast("Still writing… stop it first."); return; }
@@ -110,66 +110,64 @@ export function renderStory(id) {
     }
   }
 
-  function openSetup() {
-    const premise = h("textarea", { class: "input", rows: 4, value: story.premise,
-      placeholder: "What's this story about? Setting, situation, the arc you want, key beats…",
-      onInput: () => { story.premise = premise.value; persist(); } });
-    const style = h("textarea", { class: "input", rows: 2, value: story.style,
-      placeholder: "e.g. Lyrical but punchy. Lots of dialogue. Short chapters.",
-      onInput: () => { story.style = style.value; persist(); } });
-    autosize(premise, 300); autosize(style, 200);
-
-    const chars = lib().characters;
-    const castPicker = chars.length
-      ? h("div", { class: "cast-pick" }, chars.map((c) => {
-        const on = () => story.castIds.includes(c.id);
-        const b = h("button", { class: `cast-opt ${on() ? "on" : ""}`, type: "button", "aria-pressed": String(on()),
-          onClick: () => {
-            story.castIds = on() ? story.castIds.filter((x) => x !== c.id) : [...story.castIds, c.id];
-            b.classList.toggle("on", on()); b.setAttribute("aria-pressed", String(on())); persist();
-          } }, avatar(c, "sm"), h("span", {}, c.name), icon("check", 16));
-        return b;
-      }))
-      : h("p", { class: "muted" }, "No characters yet — you can still write without a cast.");
-
-    sheet({
-      title: "Story setup",
-      body: h("div", { class: "form" },
-        field("Premise & outline", premise, "The AI re-reads this every time it writes, so it's a good place for your plan."),
-        h("div", { class: "field" }, h("span", { class: "field-label" }, "Cast"), h("span", { class: "field-hint" }, "Their personalities and voices are included so they sound like themselves."), castPicker),
-        field("Point of view", segmented([["first", "1st · I"], ["second", "2nd · You"], ["third", "3rd · They"]], story.pov, (v) => { story.pov = v; persist(); })),
+  function openSetup(startTab = 0) {
+    const plot = () => {
+      const premise = h("textarea", { class: "input", rows: 5, value: story.premise,
+        placeholder: "What's this story about? Setting, situation, the arc, key beats…",
+        onInput: () => { story.premise = premise.value; persist(); } });
+      autosize(premise, 300);
+      return h("div", { class: "form" }, field("Premise & outline", premise, "The AI re-reads this every time it writes."));
+    };
+    const castTab = () => {
+      const chars = lib().characters;
+      if (!chars.length) return h("p", { class: "muted" }, "No characters yet. You can still write without a cast.");
+      return h("div", { class: "form" }, h("div", { class: "field-hint" }, "Picked characters keep their personality and voice in the story."),
+        h("div", { class: "cast-pick" }, chars.map((c) => {
+          const on = () => story.castIds.includes(c.id);
+          const b = h("button", { class: `cast-opt ${on() ? "on" : ""}`, type: "button", "aria-pressed": String(on()),
+            onClick: () => {
+              story.castIds = on() ? story.castIds.filter((x) => x !== c.id) : [...story.castIds, c.id];
+              b.classList.toggle("on", on()); b.setAttribute("aria-pressed", String(on())); persist();
+            } }, avatar(c, "sm"), h("span", {}, c.name), icon("check", 18));
+          return b;
+        })));
+    };
+    const format = () => {
+      const style = h("textarea", { class: "input", rows: 2, value: story.style,
+        placeholder: "e.g. Lyrical but punchy. Lots of dialogue.",
+        onInput: () => { story.style = style.value; persist(); } });
+      autosize(style, 200);
+      return h("div", { class: "form" },
+        field("Point of view", segmented([["first", "I"], ["second", "You"], ["third", "They"]], story.pov, (v) => { story.pov = v; persist(); })),
         field("Tense", segmented([["past", "Past"], ["present", "Present"]], story.tense, (v) => { story.tense = v; persist(); })),
         field("Each time, write", segmented([["short", "~300 words"], ["medium", "~600"], ["long", "~1,000"]], story.chunk, (v) => { story.chunk = v; persist(); })),
-        field("Style", style),
-        h("div", { class: "field-label" }, "Tone"),
-        toneSliders(story.tone, persist)),
-      onClose: () => { saveStory(story); drawCast(); },
-    });
+        field("Style", style));
+    };
+    const toneTab = () => h("div", { class: "form" }, toneSliders(story.tone, persist));
+    const t = tabs([{ label: "Plot", render: plot }, { label: "Cast", render: castTab }, { label: "Format", render: format }, { label: "Tone", render: toneTab }], startTab);
+    sheet({ title: "Story setup", body: h("div", {}, t.bar, t.panel), onClose: () => { saveStory(story); drawCast(); } });
   }
 
-  function openMenu() {
-    const item = (ic, label, fn, cls = "") => h("button", { class: `menu-item ${cls}`, type: "button", onClick: () => { s.close(); fn(); } }, icon(ic, 20), h("span", {}, label));
-    const s = sheet({
-      title: story.title || "Untitled story",
-      body: h("div", { class: "menu" },
-        item("sliders", "Setup & cast", openSetup),
-        item("download", "Export as .txt", () => downloadFile(`${story.title || "Untitled"}\n\n${story.content}`, `${(story.title || "story").replace(/[^\w-]+/g, "_")}.txt`, "text/plain")),
-        item("copy", "Copy all text", () => { navigator.clipboard?.writeText(story.content); toast("Copied"); }),
-        item("trash", "Delete story", async () => {
-          if (await confirmDialog("This story will be gone for good.", { title: "Delete story?", ok: "Delete", danger: true })) {
-            deleteStory(story.id); location.replace("#/write");
-          }
-        }, "danger")),
-    });
+  function openMenu(anchor) {
+    popover(anchor, [
+      { label: "Setup & cast", icon: "sliders", onClick: () => openSetup(0) },
+      { label: "Lorebook", icon: "book", onClick: () => go("#/lore") },
+      { label: "Copy all text", icon: "copy", onClick: () => { navigator.clipboard?.writeText(story.content); toast("Copied"); } },
+      { label: "Export as .txt", icon: "download", onClick: () => downloadFile(`${story.title || "Untitled"}\n\n${story.content}`, `${(story.title || "story").replace(/[^\w-]+/g, "_")}.txt`, "text/plain") },
+      "-",
+      { label: "Delete story", icon: "trash", danger: true, onClick: async () => {
+        if (await confirmDialog("This story will be gone for good.", { title: "Delete story?", ok: "Delete", danger: true })) {
+          deleteStory(story.id); replaceTo("#/stories");
+        }
+      } },
+    ]);
   }
 
   const top = h("header", { class: "topbar" },
-    iconBtn("back", "Back", () => goBack("#/write"), "ghost back-btn"),
-    h("div", { class: "topbar-title" }, h("h1", {}, "Story")),
-    h("div", { class: "topbar-actions" }, iconBtn("sliders", "Setup & cast", openSetup, "ghost"), iconBtn("more", "More", openMenu, "ghost")));
+    iconBtn("back", "Back", () => goBack("#/stories"), "ghost back-btn"),
+    h("div", { class: "topbar-title" }, h("h1", {}, story.title || "Story")),
+    h("div", { class: "topbar-actions" }, iconBtn("more", "More", (e) => openMenu(e.currentTarget), "ghost")));
 
-  // brand new story → open setup right away so it's obvious where to start
-  if (!story.content.trim() && !story.premise.trim()) setTimeout(openSetup, 250);
 
   const view = h("section", { class: "view story" }, top, scroller, dock);
   view.onLeave = () => saveStory(story);

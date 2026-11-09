@@ -2,7 +2,7 @@
    lore.js — world info that gets added to the AI's notes
    automatically when its keywords come up.
    ========================================================= */
-import { h, icon, toast, sheet, confirmDialog, autosize, field, segmented, toggle } from "./ui.js";
+import { h, iconBtn, toast, sheet, confirmDialog, autosize, field, segmented, toggle } from "./ui.js";
 import { page, empty } from "./layout.js";
 import { lib, saveLore, deleteLore, normalizeLore } from "./store.js";
 import { rerender } from "./app.js";
@@ -18,14 +18,14 @@ export function renderLore() {
     h("div", { class: "lore-snip" }, e.content.slice(0, 160) || "No details yet."));
 
   return page({
-    title: "Lorebook", large: true,
-    actions: [h("button", { class: "btn primary small", type: "button", onClick: () => editLore() }, icon("plus", 18), "New")],
+    title: "Lorebook", back: "#/me",
+    actions: [iconBtn("plus", "New entry", () => editLore(), "ghost")],
     body: [
       h("p", { class: "muted intro" }, "Places, history, factions, rules of magic… When an entry's keywords show up in a chat or story, the AI quietly gets that entry as background notes."),
       entries.length
         ? h("div", { class: "lore-grid" }, entries.map(card))
         : empty("📚", "Your world, written down", "Add an entry for anything the AI should know about your setting.",
-          [h("button", { class: "btn primary", type: "button", onClick: () => editLore() }, "Add first entry")]),
+          [h("button", { class: "btn primary wide", type: "button", onClick: () => editLore() }, "Add first entry")]),
     ],
   });
 }
