@@ -157,7 +157,7 @@ export function renderMeModel() {
     loadState, loadBtn,
     modelStatusCard({ onRetry: () => ensureEngine(getSettings().model).catch(() => {}) }));
   const onlinePart = onlineSetup();
-  const showPart = (v) => { localPart.hidden = v !== "local"; onlinePart.hidden = v !== "online"; };
+  const showPart = (v) => { localPart.hidden = v !== "local"; onlinePart.hidden = v !== "online"; if (v === "online") onlinePart.autoBrowse(); };
   showPart(s.provider);
 
   return page({
@@ -230,7 +230,7 @@ function onlineSetup() {
   const save = debounce((patch) => updateSettings(patch), 300);
   const key = h("input", { class: "input", type: "password", value: s.onlineKey, placeholder: "sk-or-…", autocomplete: "off", onInput: () => save({ onlineKey: key.value.trim() }) });
   const url = h("input", { class: "input", value: s.onlineUrl, placeholder: "https://openrouter.ai/api/v1", onInput: () => save({ onlineUrl: url.value.trim() }) });
-  const current = h("div", { class: "nav-row-detail" }, s.onlineModel || "None yet");
+  const current = h("div", { class: "nav-row-detail" + (s.onlineModel ? "" : " warn") }, s.onlineModel || "Pick one below ↓");
   const listWrap = h("div", { class: "model-browser", hidden: true });
   const search = h("input", { class: "input search", type: "search", placeholder: "Search models (e.g. hermes, llama, mistral)" });
   const results = h("div", { class: "group" });
@@ -241,7 +241,7 @@ function onlineSetup() {
     const cur = getSettings().onlineModel;
     const hits = all.filter((m) => !q || `${m.id} ${m.name}`.toLowerCase().includes(q)).slice(0, 40);
     results.replaceChildren(...hits.map((m) => h("button", { class: `model-row ${m.id === cur ? "on" : ""}`, type: "button", onClick: () => {
-      updateSettings({ onlineModel: m.id }); current.textContent = m.id; draw(); toast(`Using ${m.name}`);
+      updateSettings({ onlineModel: m.id }); current.textContent = m.id; current.classList.remove("warn"); draw(); toast(`Using ${m.name} ✓`);
     } },
     h("div", { class: "model-row-text" },
       h("div", { class: "model-row-head" }, h("b", {}, m.name)),
@@ -257,14 +257,17 @@ function onlineSetup() {
       all = await listOnlineModels(getSettings());
       listWrap.hidden = false;
       browse.hidden = true;
-      search.value = "hermes"; draw();
+      search.value = all.some((m) => /hermes/i.test(m.id)) ? "hermes" : ""; draw();
     } catch (err) { toast(err.message, { type: "error" }); browse.textContent = "Browse models"; }
     browse.disabled = false;
   } }, icon("users", 18), "Browse models");
 
   listWrap.append(search, results);
+  // open the list by itself when no model is picked yet (no hunting for a button)
+  let tried = false;
+  const autoBrowse = () => { if (!tried && !getSettings().onlineModel) { tried = true; browse.click(); } };
 
-  return h("div", { class: "form" },
+  const el = h("div", { class: "form" },
     h("div", { class: "tip" }, icon("sparkles", 16), h("span", {},
       "Uses a much bigger AI on the internet, so characters are smarter, funnier and remember more. ",
       "Your chats are sent to that service, and it usually costs a few cents per conversation.")),
@@ -274,4 +277,6 @@ function onlineSetup() {
     listWrap,
     h("details", { class: "advanced" }, h("summary", {}, "Advanced"),
       field("Service address", url, "Any OpenAI-compatible API works. Leave as is for OpenRouter.")));
+  el.autoBrowse = autoBrowse;
+  return el;
 }
