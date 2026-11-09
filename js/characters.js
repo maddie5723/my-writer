@@ -1,14 +1,14 @@
 /* =========================================================
    characters.js — character grid, profile page and editor.
    ========================================================= */
-import { h, icon, iconBtn, avatar, toast, confirmDialog, field, autosize, imageToDataURL, downloadFile, timeAgo, popover, tabs, setKids } from "./ui.js";
+import { h, icon, iconBtn, avatar, toast, confirmDialog, field, autosize, imageToDataURL, downloadFile, timeAgo, popover, tabs, setKids, segmented, chipSelect } from "./ui.js";
 import { page, empty, go, goBack, replaceTo, toneSliders } from "./layout.js";
 import {
   lib, getCharacter, saveCharacter, deleteCharacter, chatsFor, createChat, deleteChat,
   normalizeCharacter, sampleCharacter, getProfile, msgText, DEFAULT_BOUNDARIES, saveLore,
 } from "./store.js";
 import { rerender } from "./app.js";
-import { fill } from "./prompts.js";
+import { fill, ARC_LABELS } from "./prompts.js";
 import { newChatLike, namesLine } from "./chat.js";
 
 /* ---------- Start (or continue) a chat ---------- */
@@ -61,6 +61,7 @@ export function renderCharacters() {
     body: chars.length ? [search, grid]
       : empty("🃏", "No characters yet", "Characters are who you chat and write with.",
         [h("a", { class: "btn primary wide", href: "#/c/new" }, "Create a character"),
+          h("button", { class: "btn ghost wide", type: "button", onClick: pickImportFile }, icon("upload", 18), "Import a character or pack"),
           h("button", { class: "btn ghost wide", type: "button", onClick: addSampleCharacter }, "Meet Wren (sample)")]),
   });
 }
@@ -94,6 +95,14 @@ function pngText(buf) {
 }
 const b64json = (s) => JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(s.trim()), (c) => c.charCodeAt(0))));
 
+/** Open the file picker for a character card or pack (usable from anywhere) */
+export function pickImportFile() {
+  const input = h("input", { type: "file", accept: "application/json,.json,image/png,.png", hidden: true,
+    onChange: (e) => { importCard(e.target.files?.[0]); input.remove(); } });
+  document.body.append(input);
+  input.click();
+}
+
 /** Turn any supported card shape into our character fields */
 function cardToCharacter(raw, pic = "") {
   const d = raw.data && raw.spec ? raw.data : raw; // our export or "character card v2/v3"
@@ -110,6 +119,8 @@ function cardToCharacter(raw, pic = "") {
     greeting: d.greeting || d.first_mes || "",
     greetings: d.greetings || d.alternate_greetings || [],
     avoid: d.avoid || "",
+    chatStyle: d.chatStyle,
+    arc: d.arc,
     boundaries: d.boundaries,
     style: d.style || d.system_prompt || "",
     defaults: d.defaults,
@@ -280,7 +291,10 @@ export function renderCharacterEditor(id) {
     field("Scenario", ta("scenario", "Who are you to them? Where does it start? What's the tension?", 3)),
     field("First message", ta("greeting", "*She glances up as the door opens.* You're late.", 3),
       "What they say when a new chat starts. Sets the tone and style."),
-    altGreetings());
+    altGreetings(),
+    field("New chats start as", segmented([["prose", "Fanfic"], ["roleplay", "Roleplay"], ["texting", "Texting"]], draft.chatStyle, (v) => { draft.chatStyle = v; markDirty(); })),
+    field("Relationship (slow burn)", chipSelect([["", "Off"], ...Object.entries(ARC_LABELS)], draft.arc, (v) => { draft.arc = v; markDirty(); }),
+      "Where you two start. You can move it forward in any chat."));
 
   // extra opening lines: swipe ‹ › between them at the start of a new chat
   const altGreetings = () => {

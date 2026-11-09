@@ -652,3 +652,28 @@ details.advanced[open] summary { margin-bottom: 10px; }
 /* ---------- Instant tap feedback (phones) ---------- */
 .seg button:active, .subtabs button:active, .cast-opt:active, .model-row:active, .nav-row:active, .theme-swatch:active, .pop-item:active { opacity: 0.7; }
 .cast-btn:disabled { opacity: 0.45; }
+
+/* ---------- Fanfic mode: replies read like a book page ---------- */
+.msg.prose { justify-content: flex-start; margin: 16px 0 8px; }
+.msg.prose .bubbles { max-width: min(100%, 640px); width: 100%; }
+.msg.prose .bubble {
+  background: none;
+  border-radius: 0 !important;
+  padding: 2px 4px;
+  font-family: var(--font-read);
+  font-size: calc(var(--chat-size) + 1px);
+  line-height: 1.72;
+  color: var(--text-2);
+}
+.msg.prose .bubble .say { color: var(--text); }
+.msg.prose .bubble em.act { color: var(--text-2); font-style: italic; }
+.msg.prose .bubble.typing { background: var(--bot-bubble); border-radius: 20px !important; }
+.msg.prose .msg-tools { padding-left: 0; }
+.view.chat.prose .msg.user { margin-top: 14px; }
+.view.chat.prose .msg.user .bubble { font-size: calc(var(--chat-size) - 0.5px); }
+
+/* ---------- Wrapping chip selector ---------- */
+.chip-select { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip-select button { padding: 9px 16px; min-height: 40px; border-radius: 999px; border: 0; background: var(--surface-2); color: var(--text-2); font-size: 15px; font-weight: 600; transition: background 0.1s, color 0.1s; }
+.chip-select button.on { background: var(--accent); color: var(--accent-ink); }
+.chip-select button:active { opacity: 0.7; }

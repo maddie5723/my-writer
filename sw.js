@@ -2,7 +2,7 @@
    Network-first for the app's own files (so updates show up right away),
    falling back to the cached copy when offline. The AI model files are
    cached separately by WebLLM, so they're not touched here. */
-const CACHE = "my-writer-v5";
+const CACHE = "my-writer-v7";
 const SHELL = [
   "./", "./index.html", "./styles.css", "./manifest.webmanifest", "./icons/icon.svg",
   "./js/app.js", "./js/ui.js", "./js/store.js", "./js/ai.js", "./js/prompts.js", "./js/layout.js",
@@ -27,7 +27,8 @@ self.addEventListener("fetch", (e) => {
   if (req.method !== "GET" || (!sameOrigin && !fonts)) return;
 
   e.respondWith(
-    fetch(req)
+    // always ask the server for the newest version (GitHub lets browsers keep stale copies ~10 min)
+    fetch(sameOrigin ? new Request(req, { cache: "no-cache" }) : req)
       .then((res) => {
         if (res.ok || res.type === "opaque") {
           const copy = res.clone();

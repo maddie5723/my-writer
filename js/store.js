@@ -111,6 +111,8 @@ export function normalizeCharacter(c = {}) {
     scenario: c.scenario || "",
     greeting: c.greeting || "",
     greetings: Array.isArray(c.greetings) ? c.greetings.map(String).filter((g) => g.trim()) : [],
+    chatStyle: MODES.includes(c.chatStyle) ? c.chatStyle : "roleplay",
+    arc: ARCS.includes(c.arc) ? c.arc : "",
     avoid: c.avoid || "",
     boundaries: c.boundaries || DEFAULT_BOUNDARIES,
     style: c.style || c.styleOverride || "",
@@ -130,6 +132,8 @@ export function normalizeMessage(m = {}) {
 export const msgText = (m) => m.alts[m.altIdx] ?? "";
 
 export const THEMES = ["default", "neon", "road", "whiskey", "salt", "rain", "candle"];
+export const MODES = ["prose", "roleplay", "texting"];          // Fanfic · Roleplay · Texting
+export const ARCS = ["", "friends", "tension", "confessed", "together"]; // slow-burn stages ("" = off)
 export function normalizeChat(c = {}) {
   const cast = Array.isArray(c.cast) && c.cast.length ? [...new Set(c.cast)] : [c.characterId].filter(Boolean);
   return {
@@ -144,7 +148,8 @@ export function normalizeChat(c = {}) {
     theme: THEMES.includes(c.theme) ? c.theme : "default",
     bg: c.bg || "",
     messages: Array.isArray(c.messages) ? c.messages.map(normalizeMessage) : [],
-    mode: c.mode === "texting" ? "texting" : "roleplay",
+    mode: MODES.includes(c.mode) ? c.mode : "roleplay",
+    arc: ARCS.includes(c.arc) ? c.arc : "",
     length: ["short", "medium", "long"].includes(c.length) ? c.length : "medium",
     tone: normalizeTone(c.tone),
     memory: c.memory || "",
