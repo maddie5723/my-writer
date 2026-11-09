@@ -104,9 +104,7 @@ p { margin: 0; }
   flex: none;
   display: flex;
   padding: 4px 8px calc(2px + var(--safe-b));
-  background: color-mix(in oklab, var(--bg) 82%, transparent);
-  backdrop-filter: blur(20px) saturate(1.4);
-  -webkit-backdrop-filter: blur(20px) saturate(1.4);
+  background: var(--bg-raised);
   border-top: 0.5px solid var(--line-strong);
   z-index: 5;
 }
@@ -355,9 +353,9 @@ textarea.input { min-height: 50px; }
 .avatar-pick-badge { position: absolute; right: 0; bottom: 0; width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; background: var(--accent); color: var(--accent-ink); border: 3px solid var(--bg); }
 
 .seg { display: flex; padding: 3px; gap: 2px; background: var(--surface-2); border-radius: 12px; }
-.seg button { flex: 1; min-height: 38px; padding: 6px 6px; border: 0; border-radius: 10px; background: transparent; color: var(--text-2); font-size: 15px; font-weight: 600; transition: background 0.15s, color 0.15s; }
-.seg button.on { background: var(--surface-3); color: var(--text); box-shadow: 0 1px 4px rgba(0, 0, 0, 0.18); }
-:root[data-theme="light"] .seg button.on { background: #fff; }
+.seg button { flex: 1; min-height: 40px; padding: 6px 6px; border: 0; border-radius: 10px; background: transparent; color: var(--text-2); font-size: 15px; font-weight: 600; transition: background 0.1s, color 0.1s; }
+.seg button.on { background: var(--accent); color: var(--accent-ink); box-shadow: 0 1px 4px rgba(0, 0, 0, 0.18); }
+:root[data-theme="light"] .seg button.on { background: var(--accent); }
 
 .toggle { position: relative; display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 16px; cursor: pointer; }
 .toggle input { position: absolute; opacity: 0; pointer-events: none; }
@@ -481,9 +479,11 @@ input[type="range"]::-moz-range-thumb { width: 26px; height: 26px; border: 0; bo
 .cast-pick { display: grid; gap: 8px; }
 .cast-opt { display: flex; align-items: center; gap: 12px; padding: 8px 14px 8px 8px; border-radius: 14px; border: 0; background: var(--surface); text-align: left; font-weight: 600; font-size: 16px; }
 .cast-opt span { flex: 1; }
-.cast-opt .ic { opacity: 0; color: var(--accent); }
-.cast-opt.on { background: var(--accent-soft); }
-.cast-opt.on .ic { opacity: 1; }
+.cast-opt { border: 2px solid transparent; transition: background 0.1s, border-color 0.1s; }
+.cast-opt .ic { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; border: 2px solid var(--line-strong); color: transparent; transition: background 0.1s, border-color 0.1s; }
+.cast-opt .ic svg { width: 16px; height: 16px; }
+.cast-opt.on { background: var(--accent-soft); border-color: var(--accent); }
+.cast-opt.on .ic { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
 
 /* ---------- Lore ---------- */
 .intro { margin: 4px 0 16px; }
@@ -519,13 +519,11 @@ input[type="range"]::-moz-range-thumb { width: 26px; height: 26px; border: 0; bo
   max-width: min(300px, calc(100vw - 20px));
   padding: 6px;
   border-radius: 16px;
-  background: color-mix(in oklab, var(--surface-2) 92%, transparent);
-  backdrop-filter: blur(24px) saturate(1.5);
-  -webkit-backdrop-filter: blur(24px) saturate(1.5);
+  background: var(--surface-2);
   box-shadow: var(--shadow-lg), 0 0 0 0.5px var(--line-strong);
   animation: popIn 0.18s var(--ease);
 }
-:root[data-theme="light"] .popover { background: rgba(255, 255, 255, 0.94); }
+:root[data-theme="light"] .popover { background: #fff; }
 .popover.out { animation: popOut 0.14s ease-in forwards; }
 @keyframes popIn { from { opacity: 0; transform: scale(0.88); } to { opacity: 1; transform: none; } }
 @keyframes popOut { to { opacity: 0; transform: scale(0.92); } }
@@ -640,8 +638,7 @@ details.advanced[open] summary { margin-bottom: 10px; }
 .view.chat[data-theme="rain"], .theme-swatch[data-theme="rain"] { --bg: #0a1120; --bot-bubble: #15203a; --user-bubble: #3f72c9; --user-ink: #fff; --accent: #7aa6f0; --accent-ink: #0a1120; }
 .view.chat[data-theme="candle"], .theme-swatch[data-theme="candle"] { --bg: #1a140e; --bot-bubble: #2b2218; --user-bubble: #f0c060; --user-ink: #2a1b06; --accent: #f3c86e; --accent-ink: #2a1b06; }
 .view.chat.has-bg .chat-scroll { background-size: cover; background-position: center; }
-.view.chat.has-bg .bubble { backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
-.view.chat.has-bg .msg.bot .bubble { background: color-mix(in oklab, var(--bot-bubble) 82%, transparent); }
+.view.chat.has-bg .msg.bot .bubble { background: color-mix(in oklab, var(--bot-bubble) 92%, transparent); }
 
 .theme-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 10px; }
 .theme-swatch { display: grid; gap: 6px; justify-items: center; border: 0; background: none; padding: 0; font-size: 12.5px; color: var(--text-2); }
@@ -651,3 +648,7 @@ details.advanced[open] summary { margin-bottom: 10px; }
 .theme-preview i:last-child { width: 55%; justify-self: end; background: var(--user-bubble); }
 .theme-swatch.on .theme-preview { box-shadow: 0 0 0 2px var(--bg-raised), 0 0 0 4px var(--accent); }
 .theme-swatch.on { color: var(--text); font-weight: 600; }
+
+/* ---------- Instant tap feedback (phones) ---------- */
+.seg button:active, .subtabs button:active, .cast-opt:active, .model-row:active, .nav-row:active, .theme-swatch:active, .pop-item:active { opacity: 0.7; }
+.cast-btn:disabled { opacity: 0.45; }
