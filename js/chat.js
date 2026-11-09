@@ -34,6 +34,15 @@ export function renderChat(chatId) {
   const isGroup = () => cast().length > 1 || chat.narrator;
   let editingId = null;     // message being edited
   let streamingId = null;   // message currently being written
+  let elCache = new Map();  // message id -> { sig, el }: reuse unchanged messages between redraws
+  let summarizing = false;  // background memory update (never blocks the user)
+  const busyForUser = () => isBusy() && !summarizing;
+  /** If memory is updating in the background, stop it so the user's action goes first */
+  async function yieldToUser() {
+    if (!summarizing) return;
+    await stopGenerating();
+    for (let i = 0; i < 50 && isBusy(); i++) await new Promise((r) => setTimeout(r, 40));
+  }
   const seen = new Set();   // already on screen → don't re-animate
   const view = h("section", { class: "view chat" });
 
@@ -125,7 +134,7 @@ export function renderChat(chatId) {
     if (!mine && !narr && isGroup() && firstInGroup) wrap.append(h("div", { class: "speaker" }, sp.name));
     if (!mine && !narr) wrap.append(lastInGroup ? avatar(sp, "xs") : h("span", { class: "avatar-gap" }));
     const bubbles = h("div", { class: "bubbles", onClick: (e) => {
-      if (m.id === streamingId || isBusy()) return;
+      if (m.id === streamingId || busyForUser()) return;
       messageMenu(m, e.target.closest(".bubble") || e.currentTarget, isLast);
     } }, bubblesFor(m));
     wrap.append(bubbles);
@@ -146,6 +155,8 @@ export function renderChat(chatId) {
     const { firstVisibleIndex } = buildChatPrompt({ chat, cast: c, speaker: c[0], profile, settings, lore: lib().lore });
     const msgs = chat.messages;
     const key = (m) => (m.role === "user" ? "u" : m.speaker || c[0].id);
+    const castSig = `${chat.cast.join(",")}|${chat.narrator}|${c.map((x) => x.name + x.avatar.length).join(",")}`;
+    const fresh = new Map();
     const nodes = [];
     msgs.forEach((m, i) => {
       if (i === firstVisibleIndex && i > 0) {
@@ -153,23 +164,40 @@ export function renderChat(chatId) {
         nodes.push(h("button", { class: "memory-line", type: "button", onClick: () => openScene(3) },
           h("span", {}, remembered ? "Older messages are saved in the story summary" : "They can't see above here · add key facts to Memory")));
       }
-      nodes.push(messageEl(m, i, {
+      const opts = {
         isLast: i === msgs.length - 1,
         firstInGroup: !msgs[i - 1] || key(msgs[i - 1]) !== key(m),
         lastInGroup: !msgs[i + 1] || key(msgs[i + 1]) !== key(m),
-      }));
+      };
+      const sig = [m.role, m.speaker, m.altIdx, m.alts.length, msgText(m), opts.isLast, opts.firstInGroup, opts.lastInGroup,
+        editingId === m.id, streamingId === m.id, busyForUser(), chat.mode, castSig].join("\u0001");
+      const hit = elCache.get(m.id);
+      if (hit && hit.sig === sig) { hit.el.classList.remove("new"); nodes.push(hit.el); fresh.set(m.id, hit); return; }
+      const el = messageEl(m, i, opts);
+      fresh.set(m.id, { sig, el });
+      nodes.push(el);
     });
+    elCache = fresh;
     list.replaceChildren(...nodes);
     if (!msgs.length) {
       list.append(h("div", { class: "chat-empty muted small" },
         isGroup() ? "Say something, or tap someone below to have them start." : `Say hi to ${firstName(c[0].name)}.`));
     }
-    view.classList.toggle("texting", chat.mode === "texting");
-    view.dataset.theme = chat.theme;
-    scroller.style.backgroundImage = chat.bg ? `linear-gradient(rgba(0,0,0,.55), rgba(0,0,0,.55)), url("${chat.bg}")` : "";
-    view.classList.toggle("has-bg", !!chat.bg);
+    applyLook();
     drawCastBar();
     syncComposer();
+  }
+
+  /** Colors / background only — no need to rebuild messages */
+  let shownBg = null;
+  function applyLook() {
+    view.classList.toggle("texting", chat.mode === "texting");
+    view.dataset.theme = chat.theme;
+    if (shownBg !== chat.bg) {
+      shownBg = chat.bg;
+      scroller.style.backgroundImage = chat.bg ? `linear-gradient(rgba(0,0,0,.55), rgba(0,0,0,.55)), url("${chat.bg}")` : "";
+    }
+    view.classList.toggle("has-bg", !!chat.bg);
   }
 
   let raf = 0;
@@ -186,7 +214,7 @@ export function renderChat(chatId) {
   /* ---------- Cast bar: tap someone to have them respond ---------- */
   const castBar = h("div", { class: "cast-bar", role: "toolbar", "aria-label": "Who responds" });
   function drawCastBar() {
-    const busy = isBusy();
+    const busy = busyForUser();
     const c = cast();
     castBar.replaceChildren(
       ...c.map((x) => h("button", { class: "cast-btn", type: "button", disabled: busy, title: `${x.name} responds`, onClick: () => { haptic(); reply({ speaker: x }); } },
@@ -213,7 +241,7 @@ export function renderChat(chatId) {
   /* ---------- Composer ---------- */
   const input = h("textarea", { class: "composer-input", rows: 1, placeholder: "Message", "aria-label": "Your message", enterkeyhint: settings.enterToSend ? "send" : "enter" });
   const fit = autosize(input, 150);
-  const sendBtn = h("button", { class: "send-btn", type: "button", "aria-label": "Send", onClick: () => (isBusy() ? stopGenerating() : send()) }, icon("send", 18));
+  const sendBtn = h("button", { class: "send-btn", type: "button", "aria-label": "Send", onClick: () => (busyForUser() ? stopGenerating() : send()) }, icon("send", 18));
   const plusBtn = iconBtn("plus", "More options", (e) => popover(e.currentTarget, [
     { label: "Keep going", icon: "forward", onClick: () => reply({ cont: true }) },
     { label: "Style & length", icon: "sliders", onClick: () => openScene(1) },
@@ -228,7 +256,7 @@ export function renderChat(chatId) {
   input.addEventListener("focus", () => toBottom(true));
 
   function syncComposer() {
-    const busy = isBusy();
+    const busy = busyForUser();
     sendBtn.replaceChildren(icon(busy ? "stop" : "send", 18));
     sendBtn.setAttribute("aria-label", busy ? "Stop" : "Send");
     sendBtn.classList.toggle("stop", busy);
@@ -242,7 +270,7 @@ export function renderChat(chatId) {
   function send() {
     const text = input.value.trim();
     if (!text) return;
-    if (isBusy()) { toast("Still writing… tap ■ to stop."); return; }
+    if (busyForUser()) { toast("Still writing… tap ■ to stop."); return; }
     haptic();
     chat.messages.push(normalizeMessage({ role: "user", content: text }));
     input.value = ""; fit();
@@ -256,7 +284,8 @@ export function renderChat(chatId) {
    * chain: allow one other character to jump in if they were called out.
    */
   async function reply({ speaker = null, regen = null, cont = false, chain = false } = {}) {
-    if (isBusy()) { toast("Still writing… tap ■ to stop."); return; }
+    if (busyForUser()) { toast("Still writing… tap ■ to stop."); return; }
+    await yieldToUser();
     navigator.storage?.persist?.().catch(() => {});
     const c = cast();
     const lastBot = [...chat.messages].reverse().find((m) => m.role === "assistant");
@@ -334,10 +363,12 @@ export function renderChat(chatId) {
   async function maybeSummarize() {
     const c = cast();
     const { firstVisibleIndex } = buildChatPrompt({ chat, cast: c, speaker: c[0], profile, settings, lore: lib().lore });
-    if (firstVisibleIndex - chat.summarizedUpTo < 4 || isBusy()) return; // not enough new history has scrolled out of view
+    const every = settings.provider === "online" ? 6 : 10; // the phone AI is slower, so batch more at once
+    if (firstVisibleIndex - chat.summarizedUpTo < every || isBusy()) return; // not enough new history has scrolled out of view
     // summarize a little past the cut-off, so the gap the summary itself takes up stays covered
     const job = buildSummaryPrompt({ chat, cast: c, profile, settings, upTo: Math.max(firstVisibleIndex, Math.min(chat.messages.length - 4, firstVisibleIndex + 6)) });
-    if (list.isConnected) setStatus("remembering…", true);
+    summarizing = true;
+    if (list.isConnected) { setStatus("updating memory…", true); syncComposer(); drawCastBar(); }
     try {
       const { text, stopped } = await generate({ settings, messages: job.messages, maxTokens: 320, temperature: 0.3 });
       if (!stopped && text.trim()) {
@@ -346,7 +377,8 @@ export function renderChat(chatId) {
         touchChat(chat);
       }
     } catch { /* memory is best-effort; try again next time */ }
-    if (list.isConnected) { idleStatus(); render(); }
+    summarizing = false;
+    if (list.isConnected && !isBusy()) { idleStatus(); render(); }
   }
 
   /* ---------- Scene sheet (Cast · Style · Tone · Memory · Theme) ---------- */
@@ -382,7 +414,7 @@ export function renderChat(chatId) {
         onInput: () => { chat.direction = direction.value; saveSoon(); } });
       autosize(direction, 160);
       return h("div", { class: "form" },
-        field("Style", segmented([["roleplay", "Story"], ["texting", "Texting"]], chat.mode, (v) => { chat.mode = v; saveSoon(); render(); idleStatus(); }),
+        field("Style", segmented([["roleplay", "Story"], ["texting", "Texting"]], chat.mode, (v) => { chat.mode = v; saveSoon(); idleStatus(); requestAnimationFrame(() => setTimeout(render)); }), // show the tap first, then redraw
           chat.mode === "texting" ? "Like a real text thread — no actions or narration." : "Actions in *asterisks*, dialogue in quotes."),
         field("Reply length", segmented([["short", "Short"], ["medium", "Medium"], ["long", "Long"]], chat.length, (v) => { chat.length = v; saveSoon(); })),
         field("Direction", direction, "Optional nudge for where things go next."));
@@ -406,16 +438,16 @@ export function renderChat(chatId) {
       const wrap = h("div", { class: "form" });
       const fileInput = h("input", { type: "file", accept: "image/*", hidden: true, onChange: async (e) => {
         const f = e.target.files?.[0]; if (!f) return;
-        try { chat.bg = await imageToDataURL(f, 900); touchChat(chat); render(); draw(); } catch (err) { toast(err.message, { type: "error" }); }
+        try { chat.bg = await imageToDataURL(f, 900); touchChat(chat); applyLook(); draw(); } catch (err) { toast(err.message, { type: "error" }); }
       } });
       const draw = () => wrap.replaceChildren(
         h("div", { class: "theme-grid" }, Object.entries(THEME_LABELS).map(([k, label]) => h("button", {
           class: `theme-swatch ${chat.theme === k ? "on" : ""}`, type: "button", "data-theme": k,
-          onClick: () => { chat.theme = k; touchChat(chat); render(); draw(); },
+          onClick: () => { chat.theme = k; touchChat(chat); applyLook(); draw(); },
         }, h("span", { class: "theme-preview" }, h("i"), h("i")), h("span", {}, label)))),
         h("div", { class: "row" },
           h("button", { class: "btn ghost grow", type: "button", onClick: () => fileInput.click() }, icon("image", 18), chat.bg ? "Change background" : "Background photo"),
-          chat.bg ? h("button", { class: "btn danger-ghost", type: "button", onClick: () => { chat.bg = ""; touchChat(chat); render(); draw(); } }, "Remove") : null),
+          chat.bg ? h("button", { class: "btn danger-ghost", type: "button", onClick: () => { chat.bg = ""; touchChat(chat); applyLook(); draw(); } }, "Remove") : null),
         fileInput);
       draw();
       return wrap;

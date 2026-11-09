@@ -29,6 +29,64 @@ function write(key, value) {
   }
 }
 
+
+/* ---------- Pictures are stored on their own ----------
+   Avatars and chat backgrounds are big. Keeping them inside the library
+   meant every tiny change re-saved megabytes. Now each picture is saved
+   once under its own key, and the library just points at it. */
+const IMG_PREFIX = "mwimg:";
+const imgKeys = new Map(); // dataURL -> storage key (so each picture is only written once)
+function imgHash(str) {
+  let h = 2166136261 >>> 0;
+  const step = Math.max(1, Math.floor(str.length / 4096));
+  for (let i = 0; i < str.length; i += step) h = Math.imul(h ^ str.charCodeAt(i), 16777619) >>> 0;
+  return h.toString(36) + str.length.toString(36);
+}
+function readLib(key) {
+  try {
+    const raw = localStorage.getItem(key);
+    if (raw == null) return {};
+    return JSON.parse(raw, (k, v) => {
+      if (typeof v === "string" && v.startsWith(IMG_PREFIX)) {
+        const sk = v.slice(IMG_PREFIX.length);
+        const data = localStorage.getItem(sk) || "";
+        if (data) imgKeys.set(data, sk);
+        return data;
+      }
+      return v;
+    }) ?? {};
+  } catch { return {}; }
+}
+function writeLib(key, data) {
+  const pid = key.slice("library_".length);
+  const used = new Set();
+  try {
+    const json = JSON.stringify(data, (k, v) => {
+      if (typeof v === "string" && v.length > 2000 && v.startsWith("data:image")) {
+        let sk = imgKeys.get(v);
+        if (!sk || !sk.startsWith(`mwimg_${pid}_`)) {
+          sk = `mwimg_${pid}_${imgHash(v)}`;
+          if (localStorage.getItem(sk) == null) localStorage.setItem(sk, v);
+          imgKeys.set(v, sk);
+        }
+        used.add(sk);
+        return IMG_PREFIX + sk;
+      }
+      return v;
+    });
+    localStorage.setItem(key, json);
+  } catch (err) {
+    window.dispatchEvent(new CustomEvent("mw:storage-error", { detail: err }));
+    return false;
+  }
+  // tidy up pictures this profile no longer uses
+  for (let i = localStorage.length - 1; i >= 0; i--) {
+    const k = localStorage.key(i);
+    if (k && k.startsWith(`mwimg_${pid}_`) && !used.has(k)) localStorage.removeItem(k);
+  }
+  return true;
+}
+
 /* ---------- Normalizers (also used for imports) ---------- */
 export function normalizeTone(t = {}) {
   const out = {};
@@ -189,7 +247,7 @@ function migrate() {
 
   for (const p of profiles) {
     const key = "library_" + p.id;
-    write(key, normalizeLibrary(read(key, {})));
+    writeLib(key, normalizeLibrary(readLib(key)));
   }
   localStorage.removeItem("library"); // unused leftover from v1
   write("schemaVersion", SCHEMA);
@@ -219,8 +277,13 @@ export function deleteProfile(id) {
   if (id === getActiveProfileId()) return;
   write("profiles", getProfiles().filter((p) => p.id !== id));
   localStorage.removeItem("library_" + id);
+  for (let i = localStorage.length - 1; i >= 0; i--) {
+    const k = localStorage.key(i);
+    if (k && k.startsWith(`mwimg_${id}_`)) localStorage.removeItem(k);
+  }
 }
 export function switchProfile(id) {
+  flushLib();
   write("activeProfileId", id);
   libCache = null;
   window.dispatchEvent(new CustomEvent("mw:profile"));
@@ -234,10 +297,25 @@ export function updateSettings(patch) { write("settings", { ...getSettings(), ..
 let libCache = null;
 export function lib() {
   const key = "library_" + getActiveProfileId();
-  if (!libCache || libCache.key !== key) libCache = { key, data: normalizeLibrary(read(key, {})) };
+  if (!libCache || libCache.key !== key) libCache = { key, data: normalizeLibrary(readLib(key)) };
   return libCache.data;
 }
-export function saveLib() { return write(libCache.key, libCache.data); }
+/* Saving the whole library (with pictures) is slow on phones, so saves are
+   grouped: many changes in a row become one write a moment later. Anything
+   pending is written right away if the app is hidden or closed. */
+let saveTimer = null;
+export function saveLib() {
+  if (!libCache) return true;
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(flushLib, 400);
+  return true;
+}
+export function flushLib() {
+  if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; }
+  if (libCache) writeLib(libCache.key, libCache.data);
+}
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") flushLib(); });
+window.addEventListener("pagehide", flushLib);
 
 // Characters
 export const getCharacter = (id) => lib().characters.find((c) => c.id === id);
@@ -304,20 +382,22 @@ export function deleteStory(id) { lib().stories = lib().stories.filter((s) => s.
 
 /* ---------- Backup ---------- */
 export function exportAll() {
+  flushLib();
   return {
     app: "my-writer",
     schemaVersion: SCHEMA,
     exportedAt: nowISO(),
     profiles: getProfiles(),
     activeProfileId: getActiveProfileId(),
-    libraries: getProfiles().map((p) => ({ profileId: p.id, library: read("library_" + p.id, {}) })),
+    libraries: getProfiles().map((p) => ({ profileId: p.id, library: readLib("library_" + p.id) })), // pictures included
     settings: { ...getSettings(), onlineKey: "" }, // the API key never goes into backup files
   };
 }
 export function importAll(pack) {
   if (!pack || !Array.isArray(pack.profiles)) throw new Error("That file isn't a My Writer backup.");
+  clearTimeout(saveTimer); saveTimer = null; // drop pending saves; the backup replaces everything
   write("profiles", pack.profiles.map(normalizeProfile));
-  for (const item of pack.libraries || []) write("library_" + item.profileId, normalizeLibrary(item.library));
+  for (const item of pack.libraries || []) writeLib("library_" + item.profileId, normalizeLibrary(item.library));
   if (pack.settings) write("settings", normalizeSettings({ ...pack.settings, onlineKey: getSettings().onlineKey }));
   const ids = getProfiles().map((p) => p.id);
   write("activeProfileId", ids.includes(pack.activeProfileId) ? pack.activeProfileId : ids[0]);
@@ -326,6 +406,7 @@ export function importAll(pack) {
 }
 
 export function storageUsedKB() {
+  flushLib();
   let n = 0;
   for (let i = 0; i < localStorage.length; i++) {
     const k = localStorage.key(i);

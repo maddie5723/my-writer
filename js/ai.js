@@ -74,6 +74,7 @@ export async function checkGPU() {
 let webllm = null;
 let engine = null;
 let engineKey = null;
+let worker = null;
 let loading = null;
 
 export async function ensureEngine(modelKey) {
@@ -94,12 +95,23 @@ export async function ensureEngine(modelKey) {
     if (engine) { try { await engine.unload(); } catch { /* ignore */ } engine = null; engineKey = null; }
 
     const cached = await webllm.hasModelInCache(id).catch(() => false);
-    const e = await webllm.CreateMLCEngine(id, {
+    const config = {
       initProgressCallback: (p) => setStatus({
         progress: p.progress || 0,
         text: cached ? "Waking up " + model.name + "…" : `Downloading ${model.name} (${model.size}, one time only)…`,
       }),
-    });
+    };
+    // Run the model in a background worker so the screen never freezes while it thinks
+    let e;
+    try {
+      worker ??= new Worker(new URL("../worker.js", import.meta.url), { type: "module" });
+      e = await webllm.CreateWebWorkerMLCEngine(worker, id, config);
+    } catch (err) {
+      if (/WebGPU|memory|device|quota|fetch|network/i.test(String(err?.message))) throw err;
+      try { worker?.terminate(); } catch { /* ignore */ }
+      worker = null;
+      e = await webllm.CreateMLCEngine(id, config); // older browsers: same thing, on the main thread
+    }
     engine = e;
     engineKey = modelKey;
     setStatus({ state: "ready", progress: 1, text: model.name + " is ready" });
