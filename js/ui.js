@@ -347,3 +347,13 @@ export function fillRange(el) {
 export function setKids(el, ...kids) {
   el.replaceChildren(...kids.flat(Infinity).filter((k) => k != null && k !== false));
 }
+
+/** A row of selectable chips that wraps (for more options than fit in a segmented control) */
+export function chipSelect(options, value, onChange) {
+  const wrap = h("div", { class: "chip-select", role: "radiogroup" });
+  const draw = (v) => wrap.replaceChildren(...options.map(([val, label]) =>
+    h("button", { type: "button", role: "radio", "aria-checked": String(val === v), class: val === v ? "on" : "",
+      onClick: () => { draw(val); onChange(val); } }, label)));
+  draw(value);
+  return wrap;
+}

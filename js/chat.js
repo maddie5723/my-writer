@@ -2,10 +2,10 @@
    chat.js — immersive chat / scene with one or more characters
    plus an optional Narrator. Styled like a messaging app.
    ========================================================= */
-import { h, icon, iconBtn, avatar, formatRP, toast, sheet, confirmDialog, promptDialog, autosize, field, segmented, toggle, downloadFile, debounce, popover, tabs, haptic, imageToDataURL, setKids } from "./ui.js";
+import { h, icon, iconBtn, avatar, formatRP, toast, sheet, confirmDialog, promptDialog, autosize, field, segmented, toggle, downloadFile, debounce, popover, tabs, haptic, imageToDataURL, setKids, chipSelect } from "./ui.js";
 import { go, goBack, replaceTo, empty, page, toneSliders, modelStatusCard } from "./layout.js";
 import { getChat, getCharacter, getProfile, getSettings, lib, touchChat, deleteChat, normalizeMessage, msgText, createChat } from "./store.js";
-import { buildChatPrompt, buildSummaryPrompt, cleanReply, temperatureFor, pickSpeaker, mentioned, bannedHit, speakerName, firstName, fill } from "./prompts.js";
+import { buildChatPrompt, buildSummaryPrompt, cleanReply, temperatureFor, pickSpeaker, mentioned, bannedHit, speakerName, firstName, fill, ARC_LABELS } from "./prompts.js";
 import { generate, stopGenerating, isBusy, onStatus, ensureEngine } from "./ai.js";
 
 export const THEME_LABELS = {
@@ -18,7 +18,7 @@ export function newChatLike(cast, { narrator = false } = {}) {
   const first = cast[0];
   const user = getProfile().name || "User";
   const greetings = [first.greeting, ...(first.greetings || [])].filter((g) => g?.trim()).map((g) => fill(g, first.name, user));
-  const chat = createChat(first, greetings, { cast: cast.map((c) => c.id), narrator });
+  const chat = createChat(first, greetings, { cast: cast.map((c) => c.id), narrator, mode: first.chatStyle, arc: cast.length === 1 ? first.arc : "" });
   go(`#/chat/${chat.id}`);
   return chat;
 }
@@ -49,7 +49,10 @@ export function renderChat(chatId) {
   /* ---------- Header ---------- */
   const status = h("div", { class: "chat-status" });
   const setStatus = (text, live = false) => { status.textContent = text; status.classList.toggle("live", live); };
-  const idleStatus = () => setStatus(isGroup() ? `${cast().length} ${cast().length === 1 ? "character" : "characters"}${chat.narrator ? " + Narrator" : ""}` : chat.mode === "texting" ? "Texting" : "Roleplay");
+  const MODE_LABEL = { prose: "Fanfic", roleplay: "Roleplay", texting: "Texting" };
+  const idleStatus = () => setStatus(isGroup()
+    ? `${cast().length} ${cast().length === 1 ? "character" : "characters"}${chat.narrator ? " + Narrator" : ""}`
+    : `${MODE_LABEL[chat.mode]}${chat.arc ? ` · ${ARC_LABELS[chat.arc]}` : ""}`);
   const who = h("button", { class: "chat-who", type: "button", onClick: () => (isGroup() ? openScene(0) : go(`#/c/${cast()[0].id}`)) });
   const drawHeader = () => {
     const c = cast();
@@ -71,7 +74,7 @@ export function renderChat(chatId) {
     setKids(intro, 
       c.length > 1 ? h("div", { class: "stack-avatars big" }, c.slice(0, 4).map((x) => avatar(x, "lg"))) : avatar(c[0], "lg"),
       h("b", {}, c.length > 1 ? namesLine(c) : c[0].name),
-      c[0].scenario ? h("div", { class: "muted small" }, fill(c[0].scenario, c[0].name, userName).slice(0, 180)) : c[0].summary ? h("div", { class: "muted small" }, c[0].summary.slice(0, 160)) : null);
+      c[0].scenario ? h("div", { class: "muted small" }, upToSentence(fill(c[0].scenario, c[0].name, userName), 200)) : c[0].summary ? h("div", { class: "muted small" }, c[0].summary.slice(0, 160)) : null);
   };
   const statusCard = modelStatusCard({ onRetry: () => ensureEngine(settings.model).catch(() => {}) });
   const inner = h("div", { class: "chat-inner" }, intro, list);
@@ -117,7 +120,8 @@ export function renderChat(chatId) {
     const mine = m.role === "user";
     const sp = mine ? null : speakerOf(m);
     const narr = sp === "narrator";
-    const cls = ["msg", mine ? "user" : narr ? "narr" : "bot", seen.has(m.id) ? "" : "new", lastInGroup ? "last" : "", firstInGroup ? "first" : ""].join(" ");
+    const prose = !mine && !narr && chat.mode === "prose" && !isGroup();
+    const cls = ["msg", mine ? "user" : narr ? "narr" : prose ? "bot prose" : "bot", seen.has(m.id) ? "" : "new", lastInGroup ? "last" : "", firstInGroup ? "first" : ""].join(" ");
     const wrap = h("div", { class: cls, "data-id": m.id });
     seen.add(m.id);
 
@@ -132,7 +136,7 @@ export function renderChat(chatId) {
     }
 
     if (!mine && !narr && isGroup() && firstInGroup) wrap.append(h("div", { class: "speaker" }, sp.name));
-    if (!mine && !narr) wrap.append(lastInGroup ? avatar(sp, "xs") : h("span", { class: "avatar-gap" }));
+    if (!mine && !narr && !prose) wrap.append(lastInGroup ? avatar(sp, "xs") : h("span", { class: "avatar-gap" }));
     const bubbles = h("div", { class: "bubbles", onClick: (e) => {
       if (m.id === streamingId || busyForUser()) return;
       messageMenu(m, e.target.closest(".bubble") || e.currentTarget, isLast);
@@ -192,6 +196,7 @@ export function renderChat(chatId) {
   let shownBg = null;
   function applyLook() {
     view.classList.toggle("texting", chat.mode === "texting");
+    view.classList.toggle("prose", chat.mode === "prose");
     view.dataset.theme = chat.theme;
     if (shownBg !== chat.bg) {
       shownBg = chat.bg;
@@ -216,6 +221,7 @@ export function renderChat(chatId) {
   function drawCastBar() {
     const busy = busyForUser();
     const c = cast();
+    castBar.hidden = !isGroup(); // one-on-one: just the two of you (add people from ⋯)
     castBar.replaceChildren(...[
       ...c.map((x) => h("button", { class: "cast-btn", type: "button", disabled: busy, title: `${x.name} responds`, onClick: () => { haptic(); reply({ speaker: x }); } },
         avatar(x, "xs"), h("span", {}, firstName(x.name)))),
@@ -415,8 +421,10 @@ export function renderChat(chatId) {
         onInput: () => { chat.direction = direction.value; saveSoon(); } });
       autosize(direction, 160);
       return h("div", { class: "form" },
-        field("Style", segmented([["roleplay", "Story"], ["texting", "Texting"]], chat.mode, (v) => { chat.mode = v; saveSoon(); idleStatus(); requestAnimationFrame(() => setTimeout(render)); }), // show the tap first, then redraw
-          chat.mode === "texting" ? "Like a real text thread — no actions or narration." : "Actions in *asterisks*, dialogue in quotes."),
+        field("Style", segmented([["prose", "Fanfic"], ["roleplay", "Roleplay"], ["texting", "Texting"]], chat.mode, (v) => { chat.mode = v; saveSoon(); idleStatus(); requestAnimationFrame(() => setTimeout(render)); }), // show the tap first, then redraw
+          "Fanfic: reads like a story told to you. Roleplay: *actions* and \"dialogue\". Texting: just texts."),
+        isGroup() ? null : field("Relationship (slow burn)", chipSelect([["", "Off"], ...Object.entries(ARC_LABELS)], chat.arc, (v) => { chat.arc = v; saveSoon(); idleStatus(); }),
+          "They stay at this stage until you move it forward, so it builds naturally instead of rushing."),
         field("Reply length", segmented([["short", "Short"], ["medium", "Medium"], ["long", "Long"]], chat.length, (v) => { chat.length = v; saveSoon(); })),
         field("Direction", direction, "Optional nudge for where things go next."));
     };
@@ -517,4 +525,12 @@ export function renderChat(chatId) {
 export function namesLine(cast) {
   const n = cast.map((c) => firstName(c.name));
   return n.length <= 2 ? n.join(" & ") : `${n.slice(0, -1).join(", ")} & ${n[n.length - 1]}`;
+}
+
+/** Shorten text at a sentence end (or word end) so intros never stop mid-thought */
+function upToSentence(text, max) {
+  if (text.length <= max) return text;
+  const cut = text.slice(0, max);
+  const end = Math.max(cut.lastIndexOf(". "), cut.lastIndexOf("! "), cut.lastIndexOf("? "));
+  return end > 60 ? cut.slice(0, end + 1) : cut.replace(/\s+\S*$/, "") + "…";
 }

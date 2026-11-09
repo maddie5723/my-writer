@@ -133,6 +133,14 @@ export function userIdentity(profile) {
   return { user, line, adult };
 }
 
+/** subject / object / possessive / reflexive pronouns for the user (falls back to they) */
+export function userPronouns(profile) {
+  const p = String(profile.pronouns || "").toLowerCase();
+  if (/\bshe\b|\bher\b/.test(p)) return { subj: "she", obj: "her", poss: "her", self: "herself" };
+  if (/\bhe\b|\bhim\b/.test(p)) return { subj: "he", obj: "him", poss: "his", self: "himself" };
+  return { subj: "they", obj: "them", poss: "their", self: "themself" };
+}
+
 /** Everything the user never wants, from Me, the characters and this chat */
 export function avoidList({ profile, cast = [], chat }) {
   const lines = [];
@@ -180,7 +188,21 @@ export function speakerName(m, cast) {
   return (cast.find((c) => c.id === m.speaker) || cast[0])?.name || "Character";
 }
 
+/* Slow-burn stages: how far the relationship has gone. The user moves it forward. */
+export const ARC_LABELS = { friends: "Friends", tension: "Tension", confessed: "Confessed", together: "Together" };
+const ARC_TEXT = {
+  friends: "Best friends. Comfortable, teasing and fiercely loyal, with years of history and inside jokes. Any attraction stays hidden: a look that lingers a beat too long, protectiveness that's a little too much, something almost said and then joked away. Nothing romantic happens yet.",
+  tension: "The tension is getting hard to ignore. Almost-moments, jealousy they won't admit to, touches that last a second too long, late-night talks that get too close and get deflected. Neither of them has said it out loud yet.",
+  confessed: "The feelings are out in the open now. It's new, nervous and intense; they're figuring out what this is without losing the friendship. Show the vulnerability and the years of history behind it.",
+  together: "They're together. Comfortable and affectionate but still completely themselves: banter, inside jokes, protectiveness, and the danger of the job never goes away.",
+};
+
 const LENGTHS = {
+  prose: {
+    short: { tokens: 240, rule: "Write one rich paragraph." },
+    medium: { tokens: 440, rule: "Write two or three paragraphs, like part of a fanfic chapter." },
+    long: { tokens: 760, rule: "Write a full scene of four or more paragraphs." },
+  },
   roleplay: {
     short: { tokens: 160, rule: "Keep it short: 1–3 sentences." },
     medium: { tokens: 320, rule: "Write one or two paragraphs." },
@@ -200,6 +222,7 @@ export function buildChatPrompt({ chat, cast, speaker, profile, settings, lore, 
   const me = isNarrator ? null : (speaker || cast[0]);
   const name = isNarrator ? "the Narrator" : me.name;
   const { user, line: userLine, adult } = userIdentity(profile);
+  const pr = userPronouns(profile);
   const group = cast.length > 1 || chat.narrator;
   const f = (t, c = me || cast[0]) => fill(t, c?.name || "", user);
   const mode = isNarrator ? "roleplay" : chat.mode;
@@ -238,7 +261,9 @@ export function buildChatPrompt({ chat, cast, speaker, profile, settings, lore, 
     }
   }
 
-  const formatRule = isNarrator
+  const formatRule = mode === "prose"
+    ? `Write like a chapter of a fanfic, told in second person present tense from ${user}'s point of view ("you" = ${user}). Weave together the setting, small sensory details, ${name}'s body language and what he or she is clearly feeling but not saying, and ${name}'s dialogue in "quotes". Never decide what ${user} says, does, thinks or chooses beyond what ${pr.subj} wrote; you can describe what ${pr.subj} sees, hears and feels around ${pr.obj}. End on a beat that invites ${pr.obj} to respond.`
+    : isNarrator
     ? `Write as the Narrator: third person, present tense. Describe the setting, atmosphere, sounds, smells, tension, and what the cast visibly does. At most a line or two of dialogue from the cast. Never write ${user}'s words, actions or feelings. End on a moment that invites ${user} to act.`
     : mode === "texting"
       ? `This is a text-message conversation. Write exactly the way ${name} texts: their slang, punctuation habits, emoji only if it suits them. No narration, no actions, no asterisks. Separate multiple texts with a blank line.`
@@ -249,7 +274,9 @@ export function buildChatPrompt({ chat, cast, speaker, profile, settings, lore, 
       ? `- You are the Narrator of this story. You are not a character and you never speak to ${user} directly.`
       : `- You ARE ${name}. Stay in character no matter what. React the way ${name} genuinely would, with their own opinions, moods, flaws and agenda — not as a helpful assistant.`,
     group && !isNarrator ? `- Write ONLY ${name}'s message this turn. Other people in the scene can be mentioned through ${name}'s eyes, but never write their dialogue.` : null,
-    `- Never write ${user}'s dialogue, actions, thoughts or feelings. Stop at a natural point where it's ${user}'s turn.`,
+    mode === "prose"
+      ? `- Never write ${user}'s dialogue or decide ${pr.poss} actions or choices. Stop at a natural point where it's ${user}'s turn.`
+      : `- Never write ${user}'s dialogue, actions, thoughts or feelings. Stop at a natural point where it's ${user}'s turn.`,
     `- ${formatRule}`,
     `- ${len.rule}`,
     "- Move the story forward. Don't repeat earlier lines or phrases. Don't summarize.",
@@ -257,8 +284,10 @@ export function buildChatPrompt({ chat, cast, speaker, profile, settings, lore, 
     settings.profanity === "allow" ? "- Swearing is fine when it fits the character; don't overdo it." : "- Avoid profanity.",
   ].filter(Boolean).join("\n");
 
-  const intro = group
-    ? `This is a private, fictional, immersive interactive story with ${user}. Cast: ${cast.map((c) => c.name).join(", ")}${chat.narrator ? ", plus a Narrator" : ""}. ${user} plays themself. Each turn you write as exactly one of them, as instructed at the end of ${user}'s latest message.`
+  const intro = mode === "prose" && !group
+    ? `This is a private, immersive, fanfic-style story co-written with ${user}, who plays ${pr.self}. You write ${name}'s words and actions and narrate the world around them. You write only ${name}'s side; ${user} writes ${pr.poss} own.`
+    : group
+    ? `This is a private, fictional, immersive interactive story with ${user}. Cast: ${cast.map((c) => c.name).join(", ")}${chat.narrator ? ", plus a Narrator" : ""}. ${user} plays ${pr.self}. Each turn you write as exactly one of them, as instructed at the end of ${user}'s latest message.`
     : `You are ${name}, in a private, fictional, ongoing roleplay with ${user}. You write only ${name}'s side.`;
 
   const boundaries = [...new Set(cast.map((c) => f(c.boundaries, c)).filter(Boolean))].join("\n");
@@ -268,9 +297,10 @@ export function buildChatPrompt({ chat, cast, speaker, profile, settings, lore, 
     ...castSections,
     { title: `About ${user}`, priority: 9, body: [userLine, adult, f(profile.persona)].filter(Boolean).join(" ") },
     { title: "The situation", priority: 7, body: f(cast[0]?.scenario, cast[0]) },
+    { title: `Where ${me ? me.name : "they"} and ${user} are right now`, priority: 9, body: chat.arc && ARC_TEXT[chat.arc] ? `${ARC_TEXT[chat.arc]} Let romance build slowly and naturally and never jump past this stage; ${user} decides when things move forward.` : "" },
     { title: "The story so far", priority: 9, body: chat.summary },
     { title: "Remember", priority: 8, body: f(chat.memory) },
-    { title: "World notes", priority: 3, body: loreHits.join("\n") },
+    { title: "World notes", priority: 3, body: f(loreHits.join("\n")) },
     { title: "Tone", priority: 9, body: toneInstructions(chat.tone) },
     { title: "Writing style", priority: 6, body: [...new Set(cast.map((c) => f(c.style, c)).filter(Boolean)), settings.globalStyle].filter(Boolean).join("\n") },
     { title: "Content boundaries", priority: 9, body: boundaries },
@@ -393,7 +423,7 @@ export function buildStoryPrompt({ story, cast, profile, settings, lore, continu
     { title: "Format", priority: 10, body: `Write in ${povText}, ${story.tense} tense. Write ${chunk.words}. Output only the story text — no titles, notes, or commentary.` },
     { title: "Premise / outline", priority: 9, body: story.premise },
     { title: "Characters", priority: 8, body: castText },
-    { title: "World notes", priority: 4, body: loreHits.join("\n") },
+    { title: "World notes", priority: 4, body: fill(loreHits.join("\n"), cast[0]?.name || "", user) },
     { title: "Tone", priority: 9, body: toneInstructions(story.tone) },
     { title: "Style", priority: 6, body: [story.style, settings.globalStyle].filter(Boolean).join("\n") },
     { title: "Content", priority: 9, body: "All characters are adults (21+) and everything is consensual." + (settings.profanity === "allow" ? " Swearing is fine when natural." : " Avoid profanity.") },
