@@ -14,11 +14,16 @@ export const THEME_LABELS = {
 };
 
 /** Start a fresh chat with the same people (used by profile page & menus) */
-export function newChatLike(cast, { narrator = false } = {}) {
+export function newChatLike(cast, { narrator = false, title = "", premise = "", opening = "" } = {}) {
   const first = cast[0];
   const user = getProfile().name || "User";
-  const greetings = [first.greeting, ...(first.greetings || [])].filter((g) => g?.trim()).map((g) => fill(g, first.name, user));
-  const chat = createChat(first, greetings, { cast: cast.map((c) => c.id), narrator, mode: first.chatStyle, arc: cast.length === 1 ? first.arc : "" });
+  const defaults = [first.greeting, ...(first.greetings || [])].filter((g) => g?.trim());
+  // a storyline with its own opening uses it; one with only a premise gets written by the character; otherwise the usual openings
+  const greetings = (opening.trim() ? [opening] : premise.trim() ? [] : defaults).map((g) => fill(g, first.name, user));
+  const chat = createChat(first, greetings, {
+    cast: cast.map((c) => c.id), narrator, mode: first.chatStyle, arc: cast.length === 1 ? first.arc : "",
+    title, premise, thoughts: first.thoughts, autoStart: !greetings.length && !!premise.trim(),
+  });
   go(`#/chat/${chat.id}`);
   return chat;
 }
@@ -50,9 +55,11 @@ export function renderChat(chatId) {
   const status = h("div", { class: "chat-status" });
   const setStatus = (text, live = false) => { status.textContent = text; status.classList.toggle("live", live); };
   const MODE_LABEL = { prose: "Fanfic", roleplay: "Roleplay", texting: "Texting" };
-  const idleStatus = () => setStatus(isGroup()
-    ? `${cast().length} ${cast().length === 1 ? "character" : "characters"}${chat.narrator ? " + Narrator" : ""}`
-    : `${MODE_LABEL[chat.mode]}${chat.arc ? ` · ${ARC_LABELS[chat.arc]}` : ""}`);
+  const idleStatus = () => setStatus([
+    chat.title,
+    isGroup() ? `${cast().length} ${cast().length === 1 ? "character" : "characters"}${chat.narrator ? " + Narrator" : ""}` : MODE_LABEL[chat.mode],
+    !isGroup() && chat.arc ? ARC_LABELS[chat.arc] : "",
+  ].filter(Boolean).join(" · "));
   const who = h("button", { class: "chat-who", type: "button", onClick: () => (isGroup() ? openScene(0) : go(`#/c/${cast()[0].id}`)) });
   const drawHeader = () => {
     const c = cast();
@@ -290,7 +297,7 @@ export function renderChat(chatId) {
    * speaker: character or "narrator"; regen: message to rewrite; cont: same speaker keeps going;
    * chain: allow one other character to jump in if they were called out.
    */
-  async function reply({ speaker = null, regen = null, cont = false, chain = false } = {}) {
+  async function reply({ speaker = null, regen = null, cont = false, chain = false, opening = false } = {}) {
     if (busyForUser()) { toast("Still writing… tap ■ to stop."); return; }
     await yieldToUser();
     navigator.storage?.persist?.().catch(() => {});
@@ -320,7 +327,7 @@ export function renderChat(chatId) {
         const before = { ...chat, messages: chat.messages.slice(0, chat.messages.indexOf(target)), direction: [chat.direction, extraDirection].filter(Boolean).join(" ") };
         const prompt = buildChatPrompt({
           chat: before, cast: c, speaker, profile, settings, lore: lib().lore,
-          extraUserText: cont ? `(Continue — ${sName} keeps going from where they left off, without repeating anything.)` : (!before.messages.length || before.messages[before.messages.length - 1].role !== "user") ? (isNarr ? "(Narrator, describe what happens next.)" : `(${sName} speaks up.)`) : null,
+          extraUserText: opening ? `(Write the opening scene of this storyline: set the scene and bring ${sName} in. Don't decide what ${userName} does.)` : cont ? `(Continue — ${sName} keeps going from where they left off, without repeating anything.)` : (!before.messages.length || before.messages[before.messages.length - 1].role !== "user") ? (isNarr ? "(Narrator, describe what happens next.)" : `(${sName} speaks up.)`) : null,
         });
         const pending = generate({
           settings,
@@ -423,6 +430,9 @@ export function renderChat(chatId) {
       return h("div", { class: "form" },
         field("Style", segmented([["prose", "Fanfic"], ["roleplay", "Roleplay"], ["texting", "Texting"]], chat.mode, (v) => { chat.mode = v; saveSoon(); idleStatus(); requestAnimationFrame(() => setTimeout(render)); }), // show the tap first, then redraw
           "Fanfic: reads like a story told to you. Roleplay: *actions* and \"dialogue\". Texting: just texts."),
+        isGroup() || chat.mode === "texting" ? null : h("div", { class: "group pad" },
+          toggle(chat.thoughts, (v) => { chat.thoughts = v; saveSoon(); }, `Show ${firstName(cast()[0].name)}'s thoughts`),
+          h("div", { class: "field-hint" }, "Every so often you'll see what they're really thinking, set apart in italics.")),
         isGroup() ? null : field("Relationship (slow burn)", chipSelect([["", "Off"], ...Object.entries(ARC_LABELS)], chat.arc, (v) => { chat.arc = v; saveSoon(); idleStatus(); }),
           "They stay at this stage until you move it forward, so it builds naturally instead of rushing."),
         field("Reply length", segmented([["short", "Short"], ["medium", "Medium"], ["long", "Long"]], chat.length, (v) => { chat.length = v; saveSoon(); })),
@@ -438,6 +448,8 @@ export function renderChat(chatId) {
         return t;
       };
       return h("div", { class: "form" },
+        field("Storyline name", (() => { const i = h("input", { class: "input", value: chat.title, placeholder: "e.g. The motel with one bed", onInput: () => { chat.title = i.value; saveSoon(); idleStatus(); } }); return i; })()),
+        field("This storyline is about", ta("premise", 3, "e.g. A case in New Orleans goes wrong and we have to hide out together for a week."), "Optional. Keeps this story on track, separate from your other storylines."),
         field("Always remember", ta("memory", 3, `e.g. ${userName} is new to hunting. They found the journal in the trunk.`), "Facts that should never be forgotten."),
         field("Story so far (automatic)", ta("summary", 4, "Fills in on its own as the story gets long. You can edit it."), "Older parts of the chat get summarized here automatically."),
         field("Don't do this in this chat", ta("avoid", 3, "One per line, e.g.\nDon't call me kid\nNo one dies"), "Hard rules for this chat. Your always-rules live in Me → Profile."));
@@ -481,7 +493,13 @@ export function renderChat(chatId) {
       { label: "Memory", icon: "bookmark", onClick: () => openScene(3) },
       { label: "Theme", icon: "image", onClick: () => openScene(4) },
       "-",
-      { label: "New chat", icon: "plus", onClick: () => newChatLike(c, { narrator: chat.narrator }) },
+      c.length === 1 && !chat.narrator
+        ? { label: "New storyline", icon: "plus", onClick: () => newStorySheet(c[0]) }
+        : { label: "New chat", icon: "plus", onClick: () => newChatLike(c, { narrator: chat.narrator }) },
+      { label: chat.title ? "Rename storyline" : "Name this storyline", icon: "edit", onClick: async () => {
+        const t = await promptDialog("Storyline name", { value: chat.title, placeholder: "e.g. Road trip to Oregon" });
+        if (t != null) { chat.title = t; touchChat(chat); idleStatus(); }
+      } },
       c.length === 1 ? { label: `View ${firstName(c[0].name)}`, icon: "user", onClick: () => go(`#/c/${c[0].id}`) } : null,
       { label: "What the AI sees", icon: "eye", onClick: showPrompt },
       { label: "Export as text", icon: "download", onClick: exportChat },
@@ -519,6 +537,12 @@ export function renderChat(chatId) {
   render();
   requestAnimationFrame(() => toBottom(true));
   view.append(top, scroller, statusCard, composer);
+  // a storyline with only a premise: the character writes the opening scene
+  if (chat.autoStart && !chat.messages.length) {
+    chat.autoStart = false;
+    touchChat(chat);
+    setTimeout(() => reply({ speaker: cast()[0], opening: true }), 350);
+  }
   return view;
 }
 
@@ -533,4 +557,41 @@ function upToSentence(text, max) {
   const cut = text.slice(0, max);
   const end = Math.max(cut.lastIndexOf(". "), cut.lastIndexOf("! "), cut.lastIndexOf("? "));
   return end > 60 ? cut.slice(0, end + 1) : cut.replace(/\s+\S*$/, "") + "…";
+}
+
+/* ---------- New storyline: pick an idea or write your own ---------- */
+export function newStorySheet(ch) {
+  const first = firstName(ch.name);
+  const start = (opts) => { s.close(); newChatLike([ch], opts); };
+
+  const ideas = () => {
+    const list = [
+      ...ch.storylines.map((st) => ({ ...st, label: st.title || "Untitled", sub: st.premise })),
+      { title: "", premise: "", opening: "", label: "Classic start", sub: `${first}'s usual opening${ch.greetings.length ? "s (swipe between them)" : ""}` },
+    ];
+    return h("div", { class: "group" }, list.map((st) => h("button", { class: "story-idea", type: "button", onClick: () => start({ title: st.title, premise: st.premise, opening: st.opening }) },
+      h("div", { class: "story-idea-text" }, h("b", {}, st.label), st.sub ? h("span", {}, fill(st.sub, ch.name, getProfile().name || "you").slice(0, 140)) : null),
+      icon("chevronRight", 18))));
+  };
+
+  const own = () => {
+    const title = h("input", { class: "input", placeholder: "e.g. Fake dating in Vegas" });
+    const premise = h("textarea", { class: "input", rows: 4, placeholder: `What's this one about? e.g. A case forces me and ${first} to pose as a married couple at a creepy couples' retreat.` });
+    const opening = h("textarea", { class: "input", rows: 3, placeholder: `Optional. Leave empty and ${first} will set the scene.` });
+    autosize(premise, 260); autosize(opening, 220);
+    return h("div", { class: "form" },
+      field("Name it", title),
+      field("What's it about?", premise, "Anything you want: a case, an AU, a trope, a mood."),
+      field("How it opens", opening),
+      h("button", { class: "btn primary wide", type: "button", onClick: () => {
+        if (!premise.value.trim() && !opening.value.trim()) { toast("Tell me what it's about first", { type: "error" }); premise.focus(); return; }
+        start({ title: title.value.trim(), premise: premise.value.trim(), opening: opening.value.trim() });
+      } }, icon("sparkles", 18), "Start this story"));
+  };
+
+  const t = tabs([
+    { label: ch.storylines.length ? "Ideas" : "Start", render: ideas },
+    { label: "Write your own", render: own },
+  ], ch.storylines.length ? 0 : 1);
+  const s = sheet({ title: `New storyline with ${first}`, body: h("div", {}, t.bar, t.panel) });
 }

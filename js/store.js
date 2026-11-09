@@ -112,6 +112,11 @@ export function normalizeCharacter(c = {}) {
     greeting: c.greeting || "",
     greetings: Array.isArray(c.greetings) ? c.greetings.map(String).filter((g) => g.trim()) : [],
     chatStyle: MODES.includes(c.chatStyle) ? c.chatStyle : "roleplay",
+    thoughts: !!c.thoughts,
+    // ready-made storylines: { title, premise, opening } (opening is optional; without it they start the scene)
+    storylines: Array.isArray(c.storylines)
+      ? c.storylines.filter((x) => x && (x.title || x.premise)).map((x) => ({ title: String(x.title || "").trim(), premise: String(x.premise || ""), opening: String(x.opening || "") }))
+      : [],
     arc: ARCS.includes(c.arc) ? c.arc : "",
     avoid: c.avoid || "",
     boundaries: c.boundaries || DEFAULT_BOUNDARIES,
@@ -150,6 +155,10 @@ export function normalizeChat(c = {}) {
     messages: Array.isArray(c.messages) ? c.messages.map(normalizeMessage) : [],
     mode: MODES.includes(c.mode) ? c.mode : "roleplay",
     arc: ARCS.includes(c.arc) ? c.arc : "",
+    title: c.title || "",          // storyline name
+    premise: c.premise || "",      // what this storyline is about
+    thoughts: !!c.thoughts,        // show the character's inner thoughts
+    autoStart: !!c.autoStart,      // character writes the opening scene
     length: ["short", "medium", "long"].includes(c.length) ? c.length : "medium",
     tone: normalizeTone(c.tone),
     memory: c.memory || "",
@@ -228,7 +237,7 @@ function normalizeSettings(s = {}) {
     model: MODEL_MIGRATIONS[s.model] || s.model || "hermes3-3b",
     temp: Number.isFinite(+s.temp) ? +s.temp : 0.85,
     globalStyle: s.globalStyle || "",
-    profanity: s.profanity === "avoid" ? "avoid" : "allow",
+    profanity: ["avoid", "allow", "unfiltered"].includes(s.profanity) ? s.profanity : "allow",
     enterToSend: s.enterToSend ?? !matchMedia("(pointer: coarse)").matches,
     provider: s.provider === "online" ? "online" : "local",
     onlineUrl: s.onlineUrl || "https://openrouter.ai/api/v1",

@@ -188,6 +188,13 @@ export function speakerName(m, cast) {
   return (cast.find((c) => c.id === m.speaker) || cast[0])?.name || "Character";
 }
 
+/** How freely characters can talk (Me → AI model → Swearing) */
+export function swearRule(settings) {
+  if (settings.profanity === "avoid") return "- Avoid profanity.";
+  if (settings.profanity === "unfiltered") return "- Don't censor how characters talk: swearing, crude humor, innuendo and dirty jokes are welcome whenever they fit the character.";
+  return "- Characters swear naturally, as much as they really would. Don't tone it down.";
+}
+
 /* Slow-burn stages: how far the relationship has gone. The user moves it forward. */
 export const ARC_LABELS = { friends: "Friends", tension: "Tension", confessed: "Confessed", together: "Together" };
 const ARC_TEXT = {
@@ -281,7 +288,10 @@ export function buildChatPrompt({ chat, cast, speaker, profile, settings, lore, 
     `- ${len.rule}`,
     "- Move the story forward. Don't repeat earlier lines or phrases. Don't summarize.",
     "- No meta commentary, disclaimers, or mentions of being an AI.",
-    settings.profanity === "allow" ? "- Swearing is fine when it fits the character; don't overdo it." : "- Avoid profanity.",
+    swearRule(settings),
+    chat.thoughts && !isNarrator && mode !== "texting"
+      ? `- Now and then, reveal ${name}'s private thoughts in double parentheses, like ((She has no idea what she does to me.)). Only things ${name} would never say out loud; short, raw and honest.`
+      : null,
   ].filter(Boolean).join("\n");
 
   const intro = mode === "prose" && !group
@@ -296,7 +306,8 @@ export function buildChatPrompt({ chat, cast, speaker, profile, settings, lore, 
     { title: "", priority: 10, body: intro },
     ...castSections,
     { title: `About ${user}`, priority: 9, body: [userLine, adult, f(profile.persona)].filter(Boolean).join(" ") },
-    { title: "The situation", priority: 7, body: f(cast[0]?.scenario, cast[0]) },
+    { title: chat.premise ? "Background" : "The situation", priority: chat.premise ? 5 : 7, body: f(cast[0]?.scenario, cast[0]) },
+    { title: chat.title ? `This storyline: ${chat.title}` : "This storyline", priority: 9, body: f(chat.premise, cast[0]) },
     { title: `Where ${me ? me.name : "they"} and ${user} are right now`, priority: 9, body: chat.arc && ARC_TEXT[chat.arc] ? `${ARC_TEXT[chat.arc]} Let romance build slowly and naturally and never jump past this stage; ${user} decides when things move forward.` : "" },
     { title: "The story so far", priority: 9, body: chat.summary },
     { title: "Remember", priority: 8, body: f(chat.memory) },
@@ -426,7 +437,7 @@ export function buildStoryPrompt({ story, cast, profile, settings, lore, continu
     { title: "World notes", priority: 4, body: fill(loreHits.join("\n"), cast[0]?.name || "", user) },
     { title: "Tone", priority: 9, body: toneInstructions(story.tone) },
     { title: "Style", priority: 6, body: [story.style, settings.globalStyle].filter(Boolean).join("\n") },
-    { title: "Content", priority: 9, body: "All characters are adults (21+) and everything is consensual." + (settings.profanity === "allow" ? " Swearing is fine when natural." : " Avoid profanity.") },
+    { title: "Content", priority: 9, body: "All characters are adults (21+) and everything is consensual." + " " + swearRule(settings).replace(/^- /, "") },
   ];
 
   const budget = contextTokens(settings) - chunk.tokens - 96;

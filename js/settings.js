@@ -169,7 +169,8 @@ export function renderMeModel() {
         fillRange(temp),
         h("div", { class: "tone-ends" }, h("span", {}, "Careful"), h("span", {}, "Chaotic"))),
       field("Your writing style", style, "Applied to every chat and story."),
-      field("Swearing", segmented([["allow", "Allowed"], ["avoid", "Avoid"]], s.profanity, (v) => updateSettings({ profanity: v })))),
+      field("Swearing & crude humor", segmented([["avoid", "Avoid"], ["allow", "Natural"], ["unfiltered", "Unfiltered"]], s.profanity, (v) => updateSettings({ profanity: v })),
+        "Unfiltered: characters talk exactly like themselves (swearing, dirty jokes, innuendo).")),
   });
 }
 

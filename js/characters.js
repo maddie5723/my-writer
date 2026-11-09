@@ -1,15 +1,15 @@
 /* =========================================================
    characters.js — character grid, profile page and editor.
    ========================================================= */
-import { h, icon, iconBtn, avatar, toast, confirmDialog, field, autosize, imageToDataURL, downloadFile, timeAgo, popover, tabs, setKids, segmented, chipSelect } from "./ui.js";
+import { h, icon, iconBtn, avatar, toast, confirmDialog, field, autosize, imageToDataURL, downloadFile, timeAgo, popover, tabs, setKids, segmented, chipSelect, toggle, promptDialog } from "./ui.js";
 import { page, empty, go, goBack, replaceTo, toneSliders } from "./layout.js";
 import {
   lib, getCharacter, saveCharacter, deleteCharacter, chatsFor, createChat, deleteChat,
-  normalizeCharacter, sampleCharacter, getProfile, msgText, DEFAULT_BOUNDARIES, saveLore,
+  normalizeCharacter, sampleCharacter, getProfile, msgText, DEFAULT_BOUNDARIES, saveLore, touchChat,
 } from "./store.js";
 import { rerender } from "./app.js";
 import { fill, ARC_LABELS } from "./prompts.js";
-import { newChatLike, namesLine } from "./chat.js";
+import { newChatLike, namesLine, newStorySheet } from "./chat.js";
 
 /* ---------- Start (or continue) a chat ---------- */
 export function startNewChat(ch) { newChatLike([ch]); }
@@ -121,6 +121,8 @@ function cardToCharacter(raw, pic = "") {
     avoid: d.avoid || "",
     chatStyle: d.chatStyle,
     arc: d.arc,
+    thoughts: d.thoughts,
+    storylines: d.storylines,
     boundaries: d.boundaries,
     style: d.style || d.system_prompt || "",
     defaults: d.defaults,
@@ -180,7 +182,7 @@ export function renderCharacter(id) {
   const chats = chatsFor(ch.id);
 
   const menu = (btn) => popover(btn, [
-    { label: "New chat", icon: "plus", onClick: () => startNewChat(ch) },
+    { label: "New storyline", icon: "plus", onClick: () => newStorySheet(ch) },
     { label: "Edit", icon: "edit", onClick: () => go(`#/c/${ch.id}/edit`) },
     { label: "Export card", icon: "download", onClick: () => downloadFile(JSON.stringify({ app: "my-writer", type: "character", ...ch }, null, 2), `${ch.name.replace(/[^\w-]+/g, "_")}.character.json`) },
     "-",
@@ -197,8 +199,9 @@ export function renderCharacter(id) {
     ch.summary ? h("p", { class: "profile-sum" }, ch.summary) : null,
     ch.tags.length ? h("div", { class: "chips center" }, ch.tags.map((t) => h("span", { class: "chip" }, t))) : null,
     h("div", { class: "profile-actions" },
-      h("button", { class: "btn primary grow", type: "button", onClick: () => openLatestChat(ch) }, icon("message", 18), "Message"),
-      h("a", { class: "btn ghost", href: `#/c/${ch.id}/edit` }, "Edit")));
+      h("button", { class: "btn primary grow", type: "button", onClick: () => openLatestChat(ch) }, icon("message", 18), chats.length ? "Continue" : "Message"),
+      h("button", { class: "btn ghost", type: "button", onClick: () => newStorySheet(ch) }, icon("plus", 18), "New story"),
+      h("a", { class: "btn ghost icon-only", href: `#/c/${ch.id}/edit`, "aria-label": "Edit" }, icon("edit", 18))));
 
   const about = [
     ["Personality", ch.personality], ["How they talk", ch.speech], ["Scenario", ch.scenario],
@@ -209,9 +212,13 @@ export function renderCharacter(id) {
     const row = h("div", { class: "convo-wrap" },
       h("a", { class: "convo", href: `#/chat/${c.id}` },
         h("div", { class: "convo-text" },
-          h("div", { class: "convo-top" }, h("b", {}, c.cast.length > 1 ? `With ${namesLine(c.cast.map(getCharacter).filter(Boolean))}` : `${c.messages.length} message${c.messages.length === 1 ? "" : "s"}`), h("span", {}, timeAgo(c.updatedAt))),
+          h("div", { class: "convo-top" }, h("b", {}, c.title || (c.cast.length > 1 ? `With ${namesLine(c.cast.map(getCharacter).filter(Boolean))}` : "Untitled storyline")), h("span", {}, timeAgo(c.updatedAt))),
           h("div", { class: "convo-last" }, last ? msgText(last).replace(/[*]/g, "").slice(0, 120) : "Empty chat"))),
       iconBtn("more", "Chat options", (e) => popover(e.currentTarget, [
+        { label: c.title ? "Rename" : "Name it", icon: "edit", onClick: async () => {
+          const t = await promptDialog("Storyline name", { value: c.title, placeholder: "e.g. Road trip to Oregon" });
+          if (t != null) { c.title = t; touchChat(c); rerender(); }
+        } },
         { label: "Delete chat", icon: "trash", danger: true, onClick: async () => {
           if (await confirmDialog("This conversation will be gone for good.", { title: "Delete chat?", ok: "Delete", danger: true })) { deleteChat(c.id); row.remove(); toast("Chat deleted"); }
         } },
@@ -226,7 +233,7 @@ export function renderCharacter(id) {
       hero,
       about.length ? h("div", { class: "group about" }, about.map(([k, v]) =>
         h("div", { class: "about-item" }, h("div", { class: "about-k" }, k), h("div", { class: "about-v" }, fill(v, ch.name, getProfile().name || "you"))))) : null,
-      chats.length ? h("div", { class: "group-title" }, "Chats") : null,
+      chats.length ? h("div", { class: "group-title" }, chats.length === 1 ? "Your story" : `Your storylines (${chats.length})`) : null,
       chats.length ? h("div", { class: "group" }, chats.map(chatRow)) : null,
     ],
   });
@@ -294,7 +301,27 @@ export function renderCharacterEditor(id) {
     altGreetings(),
     field("New chats start as", segmented([["prose", "Fanfic"], ["roleplay", "Roleplay"], ["texting", "Texting"]], draft.chatStyle, (v) => { draft.chatStyle = v; markDirty(); })),
     field("Relationship (slow burn)", chipSelect([["", "Off"], ...Object.entries(ARC_LABELS)], draft.arc, (v) => { draft.arc = v; markDirty(); }),
-      "Where you two start. You can move it forward in any chat."));
+      "Where you two start. You can move it forward in any chat."),
+    h("div", { class: "group pad" }, toggle(draft.thoughts, (v) => { draft.thoughts = v; markDirty(); }, "Show their thoughts in new chats")),
+    storylineEditor());
+
+  // saved storyline ideas: pick one when starting a new story
+  const storylineEditor = () => {
+    const wrap = h("div", { class: "field" });
+    const draw = () => setKids(wrap,
+      h("span", { class: "field-label" }, "Storyline ideas"),
+      h("span", { class: "field-hint" }, "Saved ideas to pick from when you start a new story. Leave the opening empty and they'll set the scene themselves."),
+      draft.storylines.map((st, i) => {
+        const t = h("input", { class: "input", value: st.title, placeholder: "Name", onInput: () => { st.title = t.value; markDirty(); } });
+        const pr = h("textarea", { class: "input", rows: 2, value: st.premise, placeholder: "What's it about?", onInput: () => { st.premise = pr.value; markDirty(); } });
+        const op = h("textarea", { class: "input", rows: 2, value: st.opening, placeholder: "Opening (optional)", onInput: () => { st.opening = op.value; markDirty(); } });
+        autosize(pr, 240); autosize(op, 240);
+        return h("div", { class: "storyline-card" }, h("div", { class: "row" }, t, iconBtn("trash", "Remove", () => { draft.storylines.splice(i, 1); markDirty(); draw(); }, "ghost")), pr, op);
+      }),
+      h("button", { class: "btn ghost", type: "button", onClick: () => { draft.storylines.push({ title: "", premise: "", opening: "" }); markDirty(); draw(); } }, icon("plus", 18), "Add a storyline idea"));
+    draw();
+    return wrap;
+  };
 
   // extra opening lines: swipe ‹ › between them at the start of a new chat
   const altGreetings = () => {

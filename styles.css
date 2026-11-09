@@ -677,3 +677,28 @@ details.advanced[open] summary { margin-bottom: 10px; }
 .chip-select button { padding: 9px 16px; min-height: 40px; border-radius: 999px; border: 0; background: var(--surface-2); color: var(--text-2); font-size: 15px; font-weight: 600; transition: background 0.1s, color 0.1s; }
 .chip-select button.on { background: var(--accent); color: var(--accent-ink); }
 .chip-select button:active { opacity: 0.7; }
+
+/* ---------- Inner thoughts ((like this)) ---------- */
+.bubble .thought {
+  font-style: italic;
+  color: color-mix(in oklab, var(--accent) 75%, var(--text));
+  background: var(--accent-softer);
+  border-radius: 6px;
+  padding: 0 4px;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+.msg.user .bubble .thought { color: inherit; background: rgba(0, 0, 0, 0.12); }
+
+/* ---------- Storylines ---------- */
+.convo-title { font-size: 13px; font-weight: 600; color: var(--accent); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 1px; }
+.story-idea { display: flex; align-items: center; gap: 12px; width: 100%; padding: 14px 16px; border: 0; background: none; text-align: left; color: inherit; position: relative; }
+.story-idea + .story-idea::before { content: ""; position: absolute; top: 0; left: 16px; right: 0; height: 0.5px; background: var(--line-strong); }
+.story-idea:active { background: var(--surface-2); }
+.story-idea-text { flex: 1; min-width: 0; display: grid; gap: 2px; }
+.story-idea-text b { font-size: 16px; }
+.story-idea-text span { font-size: 13.5px; color: var(--text-2); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.story-idea > .ic { color: var(--text-3); }
+.storyline-card { display: grid; gap: 8px; padding: 12px; border-radius: 14px; background: var(--surface); }
+.storyline-card .row .input { flex: 1; }
+.btn.icon-only { padding: 0; width: 48px; }
