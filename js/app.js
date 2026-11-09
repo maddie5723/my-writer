@@ -1,11 +1,11 @@
 /* =========================================================
    app.js — app shell: theme, tab bar, router and the Chats tab.
    ========================================================= */
-import { h, icon, iconBtn, avatar, toast, timeAgo, popover, haptic } from "./ui.js";
+import { h, icon, iconBtn, avatar, toast, timeAgo, popover, haptic, sheet, toggle } from "./ui.js";
 import { page, empty, noteRoute, resetStack } from "./layout.js";
 import { getProfile, lib, recentChats, getCharacter, msgText } from "./store.js";
 import { renderCharacters, renderCharacter, renderCharacterEditor, addSampleCharacter, openLatestChat } from "./characters.js";
-import { renderChat } from "./chat.js";
+import { renderChat, newChatLike, namesLine } from "./chat.js";
 import { renderStories, renderStory } from "./writer.js";
 import { renderLore } from "./lore.js";
 import { renderMe, renderMeProfile, renderMeLook, renderMeModel, renderMeData } from "./settings.js";
@@ -31,9 +31,10 @@ darkMQ.addEventListener("change", applyTheme);
 /* ---------- Chats tab (home) ---------- */
 function renderChats() {
   const L = lib();
-  const chats = recentChats().filter((c) => getCharacter(c.characterId) && c.messages.length);
+  const chats = recentChats().filter((c) => c.cast.some(getCharacter) && c.messages.length);
 
   const newMenu = (btn) => popover(btn, [
+    L.characters.length ? { label: "New scene", icon: "users", onClick: newScene } : null,
     { label: "New character", icon: "plus", onClick: () => (location.hash = "#/c/new") },
     { label: "New story", icon: "pen", onClick: () => (location.hash = "#/stories") },
     L.characters.length ? null : { label: "Add sample character", icon: "sparkles", onClick: addSampleCharacter },
@@ -47,13 +48,14 @@ function renderChats() {
       avatar(c, "lg ring"), h("span", {}, c.name.split(" ")[0])))) : null;
 
   const row = (c) => {
-    const ch = getCharacter(c.characterId);
+    const cast = c.cast.map(getCharacter).filter(Boolean);
     const last = c.messages[c.messages.length - 1];
+    const who = last.role === "user" ? "You: " : cast.length > 1 || c.narrator ? `${last.speaker === "narrator" ? "Narrator" : (cast.find((x) => x.id === last.speaker) || cast[0]).name.split(" ")[0]}: ` : "";
     return h("a", { class: "convo", href: `#/chat/${c.id}` },
-      avatar(ch, "md"),
+      cast.length > 1 ? h("div", { class: "stack-avatars md" }, cast.slice(0, 2).map((x) => avatar(x, "sm"))) : avatar(cast[0], "md"),
       h("div", { class: "convo-text" },
-        h("div", { class: "convo-top" }, h("b", {}, ch.name), h("span", {}, timeAgo(c.updatedAt))),
-        h("div", { class: "convo-last" }, `${last.role === "user" ? "You: " : ""}${msgText(last).replace(/[*]/g, "").replace(/\s+/g, " ").slice(0, 120)}`)));
+        h("div", { class: "convo-top" }, h("b", {}, cast.length > 1 ? namesLine(cast) : cast[0].name), h("span", {}, timeAgo(c.updatedAt))),
+        h("div", { class: "convo-last" }, `${who}${msgText(last).replace(/[*]/g, "").replace(/\s+/g, " ").slice(0, 120)}`)));
   };
 
   let body;
@@ -69,6 +71,34 @@ function renderChats() {
   }
 
   return page({ title: "Chats", large: true, actions: [plus], body });
+}
+
+/* ---------- New group scene: pick the cast ---------- */
+function newScene() {
+  const chars = lib().characters;
+  const picked = new Set();
+  let narrator = true;
+  const start = h("button", { class: "btn primary wide", type: "button", disabled: true, onClick: () => {
+    const cast = chars.filter((c) => picked.has(c.id));
+    s.close();
+    newChatLike(cast, { narrator });
+  } }, "Start scene");
+  const sync = () => { start.disabled = !picked.size; start.textContent = picked.size ? `Start scene with ${picked.size}` : "Pick at least one"; };
+  const s = sheet({
+    title: "New scene",
+    body: h("div", { class: "form" },
+      h("p", { class: "muted small" }, "Pick who's in it. In the chat, tap anyone's photo to have them respond, or 📖 for the Narrator."),
+      h("div", { class: "cast-pick" }, chars.map((c) => {
+        const b = h("button", { class: "cast-opt", type: "button", "aria-pressed": "false", onClick: () => {
+          picked.has(c.id) ? picked.delete(c.id) : picked.add(c.id);
+          b.classList.toggle("on", picked.has(c.id)); b.setAttribute("aria-pressed", String(picked.has(c.id))); sync();
+        } }, avatar(c, "sm"), h("span", {}, c.name), icon("check", 18));
+        return b;
+      })),
+      h("div", { class: "group pad" }, toggle(narrator, (v) => { narrator = v; }, "📖 Include a Narrator"))),
+    actions: [start],
+  });
+  sync();
 }
 
 /* ---------- Router ---------- */

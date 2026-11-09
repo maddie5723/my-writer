@@ -89,7 +89,7 @@ export function renderStory(id) {
     syncBtn();
     try {
       const promise = generate({
-        modelKey: settings.model,
+        settings,
         messages: prompt.messages,
         maxTokens: prompt.maxTokens,
         temperature: temperatureFor(settings.temp, story.tone),

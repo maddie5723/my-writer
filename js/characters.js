@@ -8,15 +8,13 @@ import {
   normalizeCharacter, sampleCharacter, getProfile, msgText, DEFAULT_BOUNDARIES,
 } from "./store.js";
 import { fill } from "./prompts.js";
+import { newChatLike, namesLine } from "./chat.js";
 
 /* ---------- Start (or continue) a chat ---------- */
-export function startNewChat(ch) {
-  const greeting = ch.greeting?.trim() ? fill(ch.greeting, ch.name, getProfile().name || "User") : "";
-  const chat = createChat(ch, greeting);
-  go(`#/chat/${chat.id}`);
-}
+export function startNewChat(ch) { newChatLike([ch]); }
+/** Their most recent one-on-one chat, or a new one */
 export function openLatestChat(ch) {
-  const latest = chatsFor(ch.id)[0];
+  const latest = chatsFor(ch.id).find((c) => c.cast.length === 1);
   if (latest) go(`#/chat/${latest.id}`); else startNewChat(ch);
 }
 
@@ -29,7 +27,7 @@ export function addSampleCharacter() {
 /* ---------- Grid ---------- */
 export function renderCharacters() {
   const chars = lib().characters;
-  const fileInput = h("input", { type: "file", accept: "application/json,.json", hidden: true, onChange: (e) => importCard(e.target.files?.[0]) });
+  const fileInput = h("input", { type: "file", accept: "application/json,.json,image/png,.png", hidden: true, onChange: (e) => importCard(e.target.files?.[0]) });
 
   const card = (ch) => h("a", { class: "pcard", href: `#/c/${ch.id}` },
     avatar(ch, "fill"),
@@ -66,14 +64,52 @@ export function renderCharacters() {
   });
 }
 
+/** Read the text chunks (tEXt / iTXt) of a PNG file */
+function pngText(buf) {
+  const v = new DataView(buf);
+  const sig = [137, 80, 78, 71, 13, 10, 26, 10];
+  if (!sig.every((b, i) => v.getUint8(i) === b)) return null;
+  const out = {};
+  const latin = new TextDecoder("latin1"), utf8 = new TextDecoder();
+  for (let p = 8; p + 8 <= v.byteLength;) {
+    const len = v.getUint32(p), type = latin.decode(new Uint8Array(buf, p + 4, 4));
+    const data = new Uint8Array(buf, p + 8, Math.min(len, v.byteLength - p - 8));
+    if (type === "tEXt" || type === "iTXt") {
+      const z = data.indexOf(0);
+      const key = latin.decode(data.slice(0, z));
+      let rest = data.slice(z + 1);
+      if (type === "iTXt") { // compression flag, method, language\0, translated keyword\0, text
+        if (rest[0] !== 0) { p += 12 + len; continue; } // compressed: skip
+        rest = rest.slice(2);
+        rest = rest.slice(rest.indexOf(0) + 1);
+        rest = rest.slice(rest.indexOf(0) + 1);
+        out[key] = utf8.decode(rest);
+      } else out[key] = latin.decode(rest);
+    }
+    if (type === "IEND") break;
+    p += 12 + len;
+  }
+  return out;
+}
+const b64json = (s) => JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(s.trim()), (c) => c.charCodeAt(0))));
+
 async function importCard(file) {
   if (!file) return;
   try {
-    const raw = JSON.parse(await file.text());
-    const d = raw.data && raw.spec ? raw.data : raw; // our export or "character card v2"
+    let raw, pic = "";
+    if (file.type === "image/png" || /\.png$/i.test(file.name)) {
+      const chunks = pngText(await file.arrayBuffer());
+      const data = chunks?.ccv3 || chunks?.chara;
+      if (!data) throw new Error("no card");
+      raw = b64json(data);
+      pic = await imageToDataURL(file).catch(() => "");
+    } else {
+      raw = JSON.parse(await file.text());
+    }
+    const d = raw.data && raw.spec ? raw.data : raw; // our export or "character card v2/v3"
     const saved = saveCharacter(normalizeCharacter({
       name: d.name,
-      avatar: d.avatar?.startsWith?.("data:") ? d.avatar : "",
+      avatar: pic || (d.avatar?.startsWith?.("data:") ? d.avatar : ""),
       summary: d.summary || d.creator_notes || "",
       tags: d.tags,
       personality: [d.personality, d.description && !d.summary ? d.description : ""].filter(Boolean).join("\n\n"),
@@ -82,6 +118,8 @@ async function importCard(file) {
       appearance: d.appearance || "",
       scenario: d.scenario || "",
       greeting: d.greeting || d.first_mes || "",
+      greetings: d.greetings || d.alternate_greetings || [],
+      avoid: d.avoid || "",
       boundaries: d.boundaries,
       style: d.style || d.system_prompt || "",
       defaults: d.defaults,
@@ -129,7 +167,7 @@ export function renderCharacter(id) {
     const row = h("div", { class: "convo-wrap" },
       h("a", { class: "convo", href: `#/chat/${c.id}` },
         h("div", { class: "convo-text" },
-          h("div", { class: "convo-top" }, h("b", {}, `${c.messages.length} message${c.messages.length === 1 ? "" : "s"}`), h("span", {}, timeAgo(c.updatedAt))),
+          h("div", { class: "convo-top" }, h("b", {}, c.cast.length > 1 ? `With ${namesLine(c.cast.map(getCharacter).filter(Boolean))}` : `${c.messages.length} message${c.messages.length === 1 ? "" : "s"}`), h("span", {}, timeAgo(c.updatedAt))),
           h("div", { class: "convo-last" }, last ? msgText(last).replace(/[*]/g, "").slice(0, 120) : "Empty chat"))),
       iconBtn("more", "Chat options", (e) => popover(e.currentTarget, [
         { label: "Delete chat", icon: "trash", danger: true, onClick: async () => {
@@ -202,13 +240,32 @@ export function renderCharacterEditor(id) {
       "Keeps their voice consistent. The AI is reminded of this every message."),
     field("Example lines", ta("examples", "{{char}}: *doesn't look up* We're closed.\n{{user}}: The sign says open.\n{{char}}: The sign is an optimist.", 5),
       "The #1 way to make them sound like themselves. {{char}} = them, {{user}} = you."),
+    field("Never says / does", ta("avoid", "One per line, e.g.\nNever calls {{user}} kid\nNever apologizes first", 2),
+      "Things that would feel wrong for them. Treated as hard rules."),
     field("Appearance", ta("appearance", "Looks, style, how they move…", 2)));
 
   const story = () => h("div", { class: "form" },
     tip("{{user}} turns into your name (set it in Me → Profile), so they always know who they're talking to."),
     field("Scenario", ta("scenario", "Who are you to them? Where does it start? What's the tension?", 3)),
     field("First message", ta("greeting", "*She glances up as the door opens.* You're late.", 3),
-      "What they say when a new chat starts. Sets the tone and style."));
+      "What they say when a new chat starts. Sets the tone and style."),
+    altGreetings());
+
+  // extra opening lines: swipe ‹ › between them at the start of a new chat
+  const altGreetings = () => {
+    const wrap = h("div", { class: "field" });
+    const draw = () => wrap.replaceChildren(
+      h("span", { class: "field-label" }, "Alternate first messages"),
+      h("span", { class: "field-hint" }, "Optional. New chats let you swipe between these openings."),
+      ...draft.greetings.map((g, i) => {
+        const t = h("textarea", { class: "input", rows: 2, value: g, placeholder: "Another way the story could start…", onInput: () => { draft.greetings[i] = t.value; markDirty(); } });
+        autosize(t, 300);
+        return h("div", { class: "alt-greet" }, t, iconBtn("trash", "Remove", () => { draft.greetings.splice(i, 1); markDirty(); draw(); }, "ghost"));
+      }),
+      h("button", { class: "btn ghost", type: "button", onClick: () => { draft.greetings.push(""); markDirty(); draw(); wrap.querySelector(".alt-greet:last-of-type textarea")?.focus(); } }, icon("plus", 18), "Add another opening"));
+    draw();
+    return wrap;
+  };
 
   const tone = () => h("div", { class: "form" },
     h("div", { class: "field-hint" }, "Starting tone for new chats. You can still change it in any chat."),

@@ -40,6 +40,9 @@ export const MODELS = [
   },
 ];
 export const CONTEXT_TOKENS = 4096;
+/** How much the model can "see" at once: small on-device, much more online */
+export const contextTokens = (settings) => (settings?.provider === "online" ? 16000 : CONTEXT_TOKENS);
+export const isOnline = (settings) => settings?.provider === "online" && settings.onlineKey && settings.onlineModel;
 export const modelByKey = (k) => MODELS.find((m) => m.key === k) || MODELS[0];
 
 /* ---------- Status (UI subscribes to this) ---------- */
@@ -131,44 +134,127 @@ export function friendlyError(err) {
 
 /* ---------- Generation ---------- */
 let busy = false;
+let abortCtl = null;
 export const isBusy = () => busy;
 
 /**
  * Stream a reply. onText(fullTextSoFar) is called as tokens arrive.
+ * Uses the online service when it's set up in Me → AI model, otherwise the on-device model.
  * Returns { text, stopped }.
  */
-export async function generate({ modelKey, messages, temperature, maxTokens, stop, onText }) {
+export async function generate({ settings, modelKey, messages, temperature, maxTokens, stop, onText }) {
   if (busy) throw new Error("Already writing. Stop the current reply first.");
   busy = true;
-  let text = "";
-  let stopped = false;
   try {
-    const e = await ensureEngine(modelKey);
-    setStatus({ state: "generating" });
-    const stream = await e.chat.completions.create({
-      messages,
-      stream: true,
-      temperature,
-      top_p: 0.92,
-      repetition_penalty: 1.08,
-      max_tokens: maxTokens,
-      stop: stop?.length ? stop.slice(0, 4) : undefined,
-    });
-    for await (const chunk of stream) {
-      const choice = chunk?.choices?.[0];
-      const d = choice?.delta?.content || "";
-      if (d) { text += d; onText?.(text); }
-      if (choice?.finish_reason === "abort") stopped = true;
-    }
+    if (settings?.provider === "online") return await generateOnline({ settings, messages, temperature, maxTokens, stop, onText });
+    return await generateLocal({ modelKey: modelKey || settings?.model, messages, temperature, maxTokens, stop, onText });
   } catch (err) {
     throw new Error(friendlyError(err));
   } finally {
     busy = false;
+    abortCtl = null;
     if (status.state === "generating") setStatus({ state: "ready" });
+  }
+}
+
+async function generateLocal({ modelKey, messages, temperature, maxTokens, stop, onText }) {
+  let text = "", stopped = false;
+  const e = await ensureEngine(modelKey);
+  setStatus({ state: "generating" });
+  const stream = await e.chat.completions.create({
+    messages, stream: true, temperature, top_p: 0.92, repetition_penalty: 1.08,
+    max_tokens: maxTokens, stop: stop?.length ? stop.slice(0, 4) : undefined,
+  });
+  for await (const chunk of stream) {
+    const choice = chunk?.choices?.[0];
+    const d = choice?.delta?.content || "";
+    if (d) { text += d; onText?.(text); }
+    if (choice?.finish_reason === "abort") stopped = true;
   }
   return { text, stopped };
 }
 
+/** Any OpenAI-compatible chat API (OpenRouter by default), streamed over SSE */
+async function generateOnline({ settings, messages, temperature, maxTokens, stop, onText }) {
+  if (!settings.onlineKey) throw new Error("Add your API key in Me → AI model → Online.");
+  if (!settings.onlineModel) throw new Error("Pick an online model in Me → AI model → Online.");
+  abortCtl = new AbortController();
+  setStatus({ state: "generating" });
+  let text = "", stopped = false;
+  let res;
+  try {
+    res = await fetch(settings.onlineUrl.replace(/\/+$/, "") + "/chat/completions", {
+      method: "POST",
+      signal: abortCtl.signal,
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${settings.onlineKey}`,
+        "X-Title": "My Writer",
+      },
+      body: JSON.stringify({
+        model: settings.onlineModel, messages, stream: true, temperature,
+        max_tokens: Math.round(maxTokens * 1.6), // bigger models write fuller replies
+        stop: stop?.length ? stop.slice(0, 4) : undefined,
+      }),
+    });
+  } catch (err) {
+    if (err.name === "AbortError") return { text, stopped: true };
+    throw new Error("Couldn't reach the online AI. Check your connection.");
+  }
+  if (!res.ok) {
+    let msg = "";
+    try { const j = await res.json(); msg = j.error?.message || j.message || ""; } catch { /* ignore */ }
+    if (res.status === 401) throw new Error("The online AI rejected your API key. Check it in Me → AI model.");
+    if (res.status === 402) throw new Error("Your online AI account is out of credits.");
+    if (res.status === 429) throw new Error("The online AI is busy (rate limited). Wait a moment and try again.");
+    throw new Error(`Online AI error ${res.status}${msg ? `: ${msg}` : ""}`);
+  }
+  const reader = res.body.getReader();
+  const dec = new TextDecoder();
+  let buf = "";
+  try {
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      let nl;
+      while ((nl = buf.indexOf("\n")) >= 0) {
+        const line = buf.slice(0, nl).trim();
+        buf = buf.slice(nl + 1);
+        if (!line.startsWith("data:")) continue;
+        const data = line.slice(5).trim();
+        if (data === "[DONE]") return { text, stopped };
+        try {
+          const j = JSON.parse(data);
+          if (j.error) throw new Error(j.error.message || "Online AI error");
+          const d = j.choices?.[0]?.delta?.content || "";
+          if (d) { text += d; onText?.(text); }
+        } catch (e) { if (e.message && !/JSON/.test(e.message)) throw e; }
+      }
+    }
+  } catch (err) {
+    if (err.name === "AbortError") stopped = true; else throw err;
+  }
+  return { text, stopped };
+}
+
+/** List models from an OpenAI-compatible service (OpenRouter's list is public) */
+export async function listOnlineModels(settings) {
+  const res = await fetch(settings.onlineUrl.replace(/\/+$/, "") + "/models", {
+    headers: settings.onlineKey ? { Authorization: `Bearer ${settings.onlineKey}` } : {},
+  });
+  if (!res.ok) throw new Error(`Couldn't load the model list (${res.status})`);
+  const j = await res.json();
+  return (j.data || []).map((m) => ({
+    id: m.id,
+    name: m.name || m.id,
+    ctx: m.context_length,
+    price: m.pricing?.completion != null ? Number(m.pricing.completion) * 1e6 : null, // $ per million output tokens
+  }));
+}
+
 export async function stopGenerating() {
-  if (engine && busy) { try { await engine.interruptGenerate(); } catch { /* ignore */ } }
+  if (!busy) return;
+  if (abortCtl) { abortCtl.abort(); return; }
+  if (engine) { try { await engine.interruptGenerate(); } catch { /* ignore */ } }
 }
