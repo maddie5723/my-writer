@@ -266,13 +266,35 @@ export async function listOnlineModels(settings) {
   });
   if (!res.ok) throw new Error(`Couldn't load the model list (${res.status})`);
   const j = await res.json();
-  return (j.data || []).map((m) => ({
-    id: m.id,
-    name: m.name || m.id,
-    ctx: m.context_length,
-    price: m.pricing?.completion != null ? Number(m.pricing.completion) * 1e6 : null, // $ per million output tokens
-  }));
+  return (j.data || []).map((m) => {
+    let inP = Number(m.pricing?.prompt), outP = Number(m.pricing?.completion); // $ per token
+    if (!Number.isFinite(inP) && Number.isFinite(outP)) inP = outP; // missing one price: assume they're similar
+    if (!Number.isFinite(outP) && Number.isFinite(inP)) outP = inP;
+    const known = Number.isFinite(inP) && Number.isFinite(outP) && inP >= 0 && outP >= 0;
+    const free = /:free$/i.test(m.id) || (known && inP === 0 && outP === 0);
+    const hidden = inP < 0 || outP < 0; // e.g. "auto" routers that have no fixed price
+    return {
+      id: m.id,
+      name: m.name || m.id,
+      ctx: m.context_length,
+      free,
+      hidden,
+      // rough cost of one message in a medium-length story (what the app sends + a page-long reply)
+      perMsg: free ? 0 : known ? TYPICAL_IN * inP + TYPICAL_OUT * outP : null,
+    };
+  });
 }
+const TYPICAL_IN = 6000;  // tokens the app sends for one message, mid-story
+const TYPICAL_OUT = 700;  // tokens in a typical reply
+
+/** "0.4¢" style label for a per-message cost in dollars */
+export function centsLabel(dollars) {
+  const c = dollars * 100;
+  if (c < 0.1) return "under 0.1¢";
+  return `${c < 1 ? c.toFixed(1) : c < 10 ? c.toFixed(1).replace(/\.0$/, "") : Math.round(c)}¢`;
+}
+/** "~1,200" messages for a dollar amount */
+export const messagesFor = (dollars, perMsg) => (perMsg > 0 ? `~${Math.floor(dollars / perMsg).toLocaleString()}` : "∞");
 
 export async function stopGenerating() {
   if (!busy) return;
