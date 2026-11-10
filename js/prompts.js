@@ -397,6 +397,50 @@ export function cleanReply(text, speakerName, userName, otherNames = []) {
   return t.trim();
 }
 
+/* ---------- "Surprise me": fresh storyline ideas ---------- */
+export function buildIdeasPrompt({ ch, profile, avoidTitles = [] }) {
+  const { user } = userIdentity(profile);
+  const f = (t) => fill(t, ch.name, user);
+  const about = [
+    `${ch.name}: ${f(ch.summary)}`,
+    ch.personality && `Personality: ${f(ch.personality).slice(0, 900)}`,
+    ch.scenario && `Their situation: ${f(ch.scenario)}`,
+    profile.persona && `About ${user}: ${f(profile.persona).slice(0, 600)}`,
+  ].filter(Boolean).join("\n");
+  return {
+    messages: [
+      { role: "system", content: "You suggest storyline ideas for an immersive, ongoing interactive story. Reply with JSON only." },
+      { role: "user", content:
+        `${about}\n\nSuggest 3 fresh storyline ideas for a new story between ${user} and ${ch.name}.\n` +
+        "- Grounded and specific, like a real moment from their lives, not a cliché trope.\n" +
+        "- Avoid: fake dating, only one bed, amnesia, love potions, 'trapped in an elevator', and anything too cheesy.\n" +
+        "- Mix the moods: one cozy or everyday, one with danger or a case, one emotional.\n" +
+        "- Each premise is 1-2 sentences and leaves room for the story to unfold.\n" +
+        (avoidTitles.length ? `- Don't repeat these: ${avoidTitles.join("; ")}.\n` : "") +
+        'Reply as a JSON array like [{"title": "...", "premise": "..."}].' },
+    ],
+  };
+}
+
+/** Pull [{title, premise}] out of the AI's reply, even if it adds extra text */
+export function parseIdeas(text) {
+  const tryJSON = (s) => { try { const v = JSON.parse(s); return Array.isArray(v) ? v : Array.isArray(v?.ideas) ? v.ideas : null; } catch { return null; } };
+  let list = tryJSON(text);
+  if (!list) { const m = text.match(/\[[\s\S]*\]/); if (m) list = tryJSON(m[0]); }
+  if (!list) {
+    // fallback: "1. Title: premise" lines
+    list = text.split(/\n+/).map((l) => l.replace(/^\s*(\d+[.)]|[-*•])\s*/, "")).map((l) => {
+      const m = l.match(/^\**([^*:]{3,60})\**\s*[:—-]\s*(.{20,})$/);
+      return m ? { title: m[1].trim(), premise: m[2].trim() } : null;
+    }).filter(Boolean);
+  }
+  return list
+    .filter((x) => x && (x.title || x.premise))
+    .map((x) => ({ title: String(x.title || "Untitled").trim().slice(0, 60), premise: String(x.premise || x.description || "").trim() }))
+    .filter((x) => x.premise)
+    .slice(0, 3);
+}
+
 /* ---------- Automatic memory: fold old messages into "the story so far" ---------- */
 export function buildSummaryPrompt({ chat, cast, profile, settings, upTo }) {
   const { user } = userIdentity(profile);
