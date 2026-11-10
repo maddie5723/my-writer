@@ -129,7 +129,8 @@ export function renderChat(chatId) {
     const narr = sp === "narrator";
     const prose = !mine && !narr && (m.kind || (chat.mode === "prose" && !isGroup()));
     const kindCls = m.kind === "pov" ? " pov" : m.kind === "skip" ? " skip" : "";
-    const cls = ["msg", mine ? "user" : narr ? "narr" : prose ? "bot prose" + kindCls : "bot", seen.has(m.id) ? "" : "new", lastInGroup ? "last" : "", firstInGroup ? "first" : ""].join(" ");
+    const mineProse = mine && chat.mode === "prose" && !isGroup() && chat.proseMine;
+    const cls = ["msg", mine ? (mineProse ? "user prose-mine" : "user") : narr ? "narr" : prose ? "bot prose" + kindCls : "bot", seen.has(m.id) ? "" : "new", lastInGroup ? "last" : "", firstInGroup ? "first" : ""].join(" ");
     const wrap = h("div", { class: cls, "data-id": m.id });
     seen.add(m.id);
 
@@ -184,7 +185,7 @@ export function renderChat(chatId) {
         lastInGroup: !msgs[i + 1] || key(msgs[i + 1]) !== key(m),
       };
       const sig = [m.role, m.speaker, m.kind, m.altIdx, m.alts.length, msgText(m), opts.isLast, opts.firstInGroup, opts.lastInGroup,
-        editingId === m.id, streamingId === m.id, busyForUser(), chat.mode, castSig].join("\u0001");
+        editingId === m.id, streamingId === m.id, busyForUser(), chat.mode, chat.proseMine, castSig].join("\u0001");
       const hit = elCache.get(m.id);
       if (hit && hit.sig === sig) { hit.el.classList.remove("new"); nodes.push(hit.el); fresh.set(m.id, hit); return; }
       const el = messageEl(m, i, opts);
@@ -208,6 +209,7 @@ export function renderChat(chatId) {
     view.classList.toggle("texting", chat.mode === "texting");
     view.classList.toggle("prose", chat.mode === "prose");
     view.dataset.theme = chat.theme;
+    input.placeholder = chat.mode === "prose" ? "Write what you say and do…" : chat.mode === "texting" ? "Text" : "Message";
     if (shownBg !== chat.bg) {
       shownBg = chat.bg;
       scroller.style.backgroundImage = chat.bg ? `linear-gradient(rgba(0,0,0,.55), rgba(0,0,0,.55)), url("${chat.bg}")` : "";
@@ -463,6 +465,9 @@ export function renderChat(chatId) {
       return h("div", { class: "form" },
         field("Style", segmented([["prose", "Fanfic"], ["roleplay", "Roleplay"], ["texting", "Texting"]], chat.mode, (v) => { chat.mode = v; saveSoon(); idleStatus(); requestAnimationFrame(() => setTimeout(render)); }), // show the tap first, then redraw
           "Fanfic: reads like a story told to you. Roleplay: *actions* and \"dialogue\". Texting: just texts."),
+        isGroup() ? null : h("div", { class: "group pad" },
+          toggle(chat.proseMine, (v) => { chat.proseMine = v; saveSoon(); render(); }, "Show my messages as part of the story"),
+          h("div", { class: "field-hint" }, "Fanfic style: your lines read like the rest of the page instead of chat bubbles. Tip: write actions like *I sit on the edge of the bed* and speech in quotes.")),
         isGroup() || chat.mode === "texting" ? null : h("div", { class: "group pad" },
           h("div", { class: "field-label" }, `${firstName(cast()[0].name)}'s thoughts`),
           segmented([[0, "Off"], [1, "Sometimes"], [2, "Often"]], chat.thoughts, (v) => { chat.thoughts = v; saveSoon(); }),

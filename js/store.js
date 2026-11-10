@@ -158,6 +158,7 @@ export function normalizeChat(c = {}) {
     mode: MODES.includes(c.mode) ? c.mode : "roleplay",
     arc: ARCS.includes(c.arc) ? c.arc : "",
     title: c.title || "",          // storyline name
+    proseMine: c.proseMine !== false, // Fanfic style: show the user's messages as part of the story
     premise: c.premise || "",      // what this storyline is about
     thoughts: c.thoughts === true ? 1 : [0, 1, 2].includes(c.thoughts) ? c.thoughts : 0, // inner thoughts: 0 off · 1 sometimes · 2 often
     autoStart: !!c.autoStart,      // character writes the opening scene

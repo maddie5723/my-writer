@@ -721,3 +721,19 @@ details.advanced[open] summary { margin-bottom: 10px; }
 .pov-head { flex-basis: 100%; display: flex; align-items: center; gap: 10px; margin: 6px 0 2px; font-size: 12px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--accent); }
 .pov-head::after { content: ""; flex: 1; height: 0.5px; background: var(--accent); opacity: 0.4; }
 .scene-break { flex-basis: 100%; text-align: center; color: var(--text-3); letter-spacing: 0.4em; font-size: 18px; margin: 10px 0 4px; }
+
+/* Fanfic style: the user's lines read as part of the story */
+.msg.prose-mine { justify-content: flex-start; margin: 14px 0 6px; }
+.msg.prose-mine .bubbles { max-width: min(100%, 640px); width: 100%; justify-items: start; padding-left: 12px; border-left: 2px solid color-mix(in oklab, var(--accent) 60%, transparent); }
+.msg.prose-mine .bubble {
+  background: none;
+  color: var(--text);
+  border-radius: 0 !important;
+  padding: 2px 4px;
+  font-family: var(--font-read);
+  font-size: calc(var(--chat-size) + 1px);
+  line-height: 1.72;
+}
+.msg.prose-mine .bubble em.act { color: var(--text-2); opacity: 1; }
+.msg.prose-mine .bubble .thought { color: color-mix(in oklab, var(--accent) 75%, var(--text)); background: var(--accent-softer); }
+.view.chat.prose .msg.prose-mine + .msg.prose { margin-top: 10px; }
