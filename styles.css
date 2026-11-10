@@ -714,3 +714,10 @@ details.advanced[open] summary { margin-bottom: 10px; }
 .btn.ghost.surprise-btn { border: 1.5px dashed var(--accent); color: var(--accent); background: var(--accent-softer); }
 .spinner { width: 16px; height: 16px; border-radius: 50%; border: 2px solid currentColor; border-right-color: transparent; animation: spin 0.8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
+
+/* POV interludes and scene breaks */
+.msg.pov .bubbles { border-left: 3px solid var(--accent); padding-left: 10px; }
+.msg.pov .bubble { font-style: italic; color: var(--text); }
+.pov-head { flex-basis: 100%; display: flex; align-items: center; gap: 10px; margin: 6px 0 2px; font-size: 12px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--accent); }
+.pov-head::after { content: ""; flex: 1; height: 0.5px; background: var(--accent); opacity: 0.4; }
+.scene-break { flex-basis: 100%; text-align: center; color: var(--text-3); letter-spacing: 0.4em; font-size: 18px; margin: 10px 0 4px; }

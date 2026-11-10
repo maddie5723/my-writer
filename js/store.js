@@ -132,6 +132,8 @@ export function normalizeMessage(m = {}) {
   const altIdx = Math.min(Math.max(0, m.altIdx ?? alts.length - 1), alts.length - 1);
   const out = { id: m.id || uid(), role: m.role === "user" ? "user" : "assistant", alts, altIdx, time: m.time || nowISO() };
   if (out.role === "assistant" && m.speaker) out.speaker = m.speaker; // character id or "narrator"
+  if (out.role === "assistant" && (m.kind === "pov" || m.kind === "skip")) out.kind = m.kind; // POV interlude / scene jump
+  if (out.kind === "skip" && m.when) out.when = String(m.when);
   return out;
 }
 export const msgText = (m) => m.alts[m.altIdx] ?? "";
@@ -157,7 +159,7 @@ export function normalizeChat(c = {}) {
     arc: ARCS.includes(c.arc) ? c.arc : "",
     title: c.title || "",          // storyline name
     premise: c.premise || "",      // what this storyline is about
-    thoughts: !!c.thoughts,        // show the character's inner thoughts
+    thoughts: c.thoughts === true ? 1 : [0, 1, 2].includes(c.thoughts) ? c.thoughts : 0, // inner thoughts: 0 off · 1 sometimes · 2 often
     autoStart: !!c.autoStart,      // character writes the opening scene
     length: ["short", "medium", "long"].includes(c.length) ? c.length : "medium",
     tone: normalizeTone(c.tone),
