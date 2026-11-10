@@ -707,3 +707,10 @@ details.advanced[open] summary { margin-bottom: 10px; }
 .price-line { font-size: 13.5px; color: var(--text-2); }
 .price-line b { color: var(--accent); font-weight: 650; }
 .model-browser .chip-select { margin-bottom: -2px; }
+
+/* "Surprise me" storyline ideas */
+.surprise { display: grid; gap: 10px; }
+.surprise .group { margin-top: 0; }
+.btn.ghost.surprise-btn { border: 1.5px dashed var(--accent); color: var(--accent); background: var(--accent-softer); }
+.spinner { width: 16px; height: 16px; border-radius: 50%; border: 2px solid currentColor; border-right-color: transparent; animation: spin 0.8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }

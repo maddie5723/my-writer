@@ -4,8 +4,8 @@
    ========================================================= */
 import { h, icon, iconBtn, avatar, formatRP, toast, sheet, confirmDialog, promptDialog, autosize, field, segmented, toggle, downloadFile, debounce, popover, tabs, haptic, imageToDataURL, setKids, chipSelect } from "./ui.js";
 import { go, goBack, replaceTo, empty, page, toneSliders, modelStatusCard } from "./layout.js";
-import { getChat, getCharacter, getProfile, getSettings, lib, touchChat, deleteChat, normalizeMessage, msgText, createChat } from "./store.js";
-import { buildChatPrompt, buildSummaryPrompt, cleanReply, temperatureFor, pickSpeaker, mentioned, bannedHit, speakerName, firstName, fill, ARC_LABELS } from "./prompts.js";
+import { getChat, getCharacter, getProfile, getSettings, lib, touchChat, deleteChat, normalizeMessage, msgText, createChat, chatsFor } from "./store.js";
+import { buildChatPrompt, buildSummaryPrompt, buildIdeasPrompt, parseIdeas, cleanReply, temperatureFor, pickSpeaker, mentioned, bannedHit, speakerName, firstName, fill, ARC_LABELS } from "./prompts.js";
 import { generate, stopGenerating, isBusy, onStatus, ensureEngine, modelByKey, isPhone } from "./ai.js";
 
 export const THEME_LABELS = {
@@ -568,14 +568,41 @@ export function newStorySheet(ch) {
   const first = firstName(ch.name);
   const start = (opts) => { s.close(); newChatLike([ch], opts); };
 
+  const ideaRow = (st) => h("button", { class: "story-idea", type: "button", onClick: () => start({ title: st.title, premise: st.premise, opening: st.opening || "" }) },
+    h("div", { class: "story-idea-text" }, h("b", {}, st.label || st.title), st.sub || st.premise ? h("span", {}, fill(st.sub || st.premise, ch.name, getProfile().name || "you").slice(0, 160)) : null),
+    icon("chevronRight", 18));
+
   const ideas = () => {
     const list = [
       ...ch.storylines.map((st) => ({ ...st, label: st.title || "Untitled", sub: st.premise })),
       { title: "", premise: "", opening: "", label: "Classic start", sub: `${first}'s usual opening${ch.greetings.length ? "s (swipe between them)" : ""}` },
     ];
-    return h("div", { class: "group" }, list.map((st) => h("button", { class: "story-idea", type: "button", onClick: () => start({ title: st.title, premise: st.premise, opening: st.opening }) },
-      h("div", { class: "story-idea-text" }, h("b", {}, st.label), st.sub ? h("span", {}, fill(st.sub, ch.name, getProfile().name || "you").slice(0, 140)) : null),
-      icon("chevronRight", 18))));
+    return h("div", { class: "form" }, surprise(), h("div", { class: "group" }, list.map(ideaRow)));
+  };
+
+  // ✨ the AI suggests 3 fresh, non-cheesy ideas for these two
+  const fresh = h("div", {});
+  const seenTitles = new Set([...ch.storylines.map((x) => x.title), ...chatsFor(ch.id).map((c) => c.title)].filter(Boolean));
+  const surprise = () => {
+    const btn = h("button", { class: "btn ghost wide surprise-btn", type: "button", onClick: async () => {
+      if (isBusy()) { toast("The AI is busy writing. Try again in a moment."); return; }
+      btn.disabled = true;
+      setKids(btn, h("span", { class: "spinner", "aria-hidden": "true" }), "Thinking up ideas…");
+      try {
+        const settings = getSettings();
+        const { messages } = buildIdeasPrompt({ ch, profile: getProfile(), avoidTitles: [...seenTitles].slice(-20) });
+        const { text } = await generate({ settings, messages, maxTokens: 500, temperature: 1.05 });
+        const got = parseIdeas(text);
+        if (!got.length) throw new Error("The AI didn't come up with usable ideas. Try again.");
+        got.forEach((x) => seenTitles.add(x.title));
+        setKids(fresh, h("div", { class: "group-title" }, "Fresh ideas"), h("div", { class: "group" }, got.map(ideaRow)));
+        setKids(btn, icon("refresh", 18), "More ideas");
+      } catch (err) {
+        toast(err.message, { type: "error", ms: 5000 });
+        setKids(btn, icon("sparkles", 18), "Surprise me with ideas");
+      } finally { btn.disabled = false; }
+    } }, icon("sparkles", 18), "Surprise me with ideas");
+    return h("div", { class: "surprise" }, btn, fresh);
   };
 
   const own = () => {
