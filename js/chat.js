@@ -127,8 +127,9 @@ export function renderChat(chatId) {
     const mine = m.role === "user";
     const sp = mine ? null : speakerOf(m);
     const narr = sp === "narrator";
-    const prose = !mine && !narr && chat.mode === "prose" && !isGroup();
-    const cls = ["msg", mine ? "user" : narr ? "narr" : prose ? "bot prose" : "bot", seen.has(m.id) ? "" : "new", lastInGroup ? "last" : "", firstInGroup ? "first" : ""].join(" ");
+    const prose = !mine && !narr && (m.kind || (chat.mode === "prose" && !isGroup()));
+    const kindCls = m.kind === "pov" ? " pov" : m.kind === "skip" ? " skip" : "";
+    const cls = ["msg", mine ? "user" : narr ? "narr" : prose ? "bot prose" + kindCls : "bot", seen.has(m.id) ? "" : "new", lastInGroup ? "last" : "", firstInGroup ? "first" : ""].join(" ");
     const wrap = h("div", { class: cls, "data-id": m.id });
     seen.add(m.id);
 
@@ -142,7 +143,9 @@ export function renderChat(chatId) {
       return wrap;
     }
 
-    if (!mine && !narr && isGroup() && firstInGroup) wrap.append(h("div", { class: "speaker" }, sp.name));
+    if (m.kind === "pov") wrap.append(h("div", { class: "pov-head" }, h("span", {}, `${firstName(sp.name)}'s POV`)));
+    if (m.kind === "skip") wrap.append(h("div", { class: "scene-break", "aria-hidden": "true" }, "⁂"));
+    if (!mine && !narr && !m.kind && isGroup() && firstInGroup) wrap.append(h("div", { class: "speaker" }, sp.name));
     if (!mine && !narr && !prose) wrap.append(lastInGroup ? avatar(sp, "xs") : h("span", { class: "avatar-gap" }));
     const bubbles = h("div", { class: "bubbles", onClick: (e) => {
       if (m.id === streamingId || busyForUser()) return;
@@ -180,7 +183,7 @@ export function renderChat(chatId) {
         firstInGroup: !msgs[i - 1] || key(msgs[i - 1]) !== key(m),
         lastInGroup: !msgs[i + 1] || key(msgs[i + 1]) !== key(m),
       };
-      const sig = [m.role, m.speaker, m.altIdx, m.alts.length, msgText(m), opts.isLast, opts.firstInGroup, opts.lastInGroup,
+      const sig = [m.role, m.speaker, m.kind, m.altIdx, m.alts.length, msgText(m), opts.isLast, opts.firstInGroup, opts.lastInGroup,
         editingId === m.id, streamingId === m.id, busyForUser(), chat.mode, castSig].join("\u0001");
       const hit = elCache.get(m.id);
       if (hit && hit.sig === sig) { hit.el.classList.remove("new"); nodes.push(hit.el); fresh.set(m.id, hit); return; }
@@ -252,12 +255,30 @@ export function renderChat(chatId) {
     toast(`${x.name} joined the scene`);
   }
 
+  /* ---------- Skip ahead (scene jump) ---------- */
+  function skipMenu() {
+    const go = (when) => reply({ speaker: cast()[0], kind: "skip", when });
+    popover(plusBtn, [
+      { label: "A few minutes later", icon: "chevronRight", onClick: () => go("a few minutes later") },
+      { label: "Later that night", icon: "chevronRight", onClick: () => go("later that night") },
+      { label: "The next morning", icon: "chevronRight", onClick: () => go("the next morning") },
+      { label: "A few days later", icon: "chevronRight", onClick: () => go("a few days later") },
+      { label: "Something else…", icon: "edit", onClick: async () => {
+        const w = await promptDialog("Skip ahead to…", { placeholder: "e.g. after the hunt, back at the bunker", ok: "Skip ahead" });
+        if (w) go(w);
+      } },
+    ], { align: "start", title: "Skip ahead" });
+  }
+
   /* ---------- Composer ---------- */
   const input = h("textarea", { class: "composer-input", rows: 1, placeholder: "Message", "aria-label": "Your message", enterkeyhint: settings.enterToSend ? "send" : "enter" });
   const fit = autosize(input, 150);
   const sendBtn = h("button", { class: "send-btn", type: "button", "aria-label": "Send", onClick: () => (busyForUser() ? stopGenerating() : send()) }, icon("send", 18));
   const plusBtn = iconBtn("plus", "More options", (e) => popover(e.currentTarget, [
     { label: "Keep going", icon: "forward", onClick: () => reply({ cont: true }) },
+    !isGroup() && chat.mode !== "texting" ? { label: `${firstName(cast()[0].name)}'s POV`, icon: "eye", onClick: () => reply({ speaker: cast()[0], kind: "pov" }) } : null,
+    chat.mode !== "texting" ? { label: "Skip ahead…", icon: "chevronRight", onClick: skipMenu } : null,
+    "-",
     { label: "Style & length", icon: "sliders", onClick: () => openScene(1) },
     { label: "Tone", icon: "sparkles", onClick: () => openScene(2) },
     { label: "Memory", icon: "bookmark", onClick: () => openScene(3) },
@@ -297,7 +318,7 @@ export function renderChat(chatId) {
    * speaker: character or "narrator"; regen: message to rewrite; cont: same speaker keeps going;
    * chain: allow one other character to jump in if they were called out.
    */
-  async function reply({ speaker = null, regen = null, cont = false, chain = false, opening = false } = {}) {
+  async function reply({ speaker = null, regen = null, cont = false, chain = false, opening = false, kind = null, when = "" } = {}) {
     if (busyForUser()) { toast("Still writing… tap ■ to stop."); return; }
     await yieldToUser();
     navigator.storage?.persist?.().catch(() => {});
@@ -311,8 +332,12 @@ export function renderChat(chatId) {
     const others = c.filter((x) => x !== speaker).map((x) => x.name);
 
     let target = regen;
-    if (target) { target.alts.push(""); target.altIdx = target.alts.length - 1; }
-    else { target = normalizeMessage({ role: "assistant", content: "", speaker: isNarr ? "narrator" : speaker.id }); chat.messages.push(target); }
+    if (target) { target.alts.push(""); target.altIdx = target.alts.length - 1; kind = target.kind || null; when = when || target.when || ""; }
+    else {
+      target = normalizeMessage({ role: "assistant", content: "", speaker: isNarr ? "narrator" : speaker.id, kind });
+      if (kind === "skip") target.when = when;
+      chat.messages.push(target);
+    }
 
     streamingId = target.id;
     render(); toBottom(true);
@@ -327,7 +352,11 @@ export function renderChat(chatId) {
         const before = { ...chat, messages: chat.messages.slice(0, chat.messages.indexOf(target)), direction: [chat.direction, extraDirection].filter(Boolean).join(" ") };
         const prompt = buildChatPrompt({
           chat: before, cast: c, speaker, profile, settings, lore: lib().lore,
-          extraUserText: opening ? `(Write the opening scene of this storyline: set the scene and bring ${sName} in. Don't decide what ${userName} does.)` : cont ? `(Continue — ${sName} keeps going from where they left off, without repeating anything.)` : (!before.messages.length || before.messages[before.messages.length - 1].role !== "user") ? (isNarr ? "(Narrator, describe what happens next.)" : `(${sName} speaks up.)`) : null,
+          extraUserText: kind === "pov"
+            ? `(Write a short interlude from ${sName}'s point of view, in third person and in ${sName}'s head: what ${sName} is noticing, wanting, afraid of and feeling about ${userName} right now, including things ${sName} would never say out loud. Don't move the plot forward and don't write ${userName}'s actions or words.)`
+            : kind === "skip"
+            ? `(Time skip: ${when}. Begin with a short scene-transition line, then open the new scene: set the mood, show where they are and bring ${sName} in. Don't decide what ${userName} does.)`
+            : opening ? `(Write the opening scene of this storyline: set the scene and bring ${sName} in. Don't decide what ${userName} does.)` : cont ? `(Continue — ${sName} keeps going from where they left off, without repeating anything.)` : (!before.messages.length || before.messages[before.messages.length - 1].role !== "user") ? (isNarr ? "(Narrator, describe what happens next.)" : `(${sName} speaks up.)`) : null,
         });
         const pending = generate({
           settings,
@@ -435,8 +464,9 @@ export function renderChat(chatId) {
         field("Style", segmented([["prose", "Fanfic"], ["roleplay", "Roleplay"], ["texting", "Texting"]], chat.mode, (v) => { chat.mode = v; saveSoon(); idleStatus(); requestAnimationFrame(() => setTimeout(render)); }), // show the tap first, then redraw
           "Fanfic: reads like a story told to you. Roleplay: *actions* and \"dialogue\". Texting: just texts."),
         isGroup() || chat.mode === "texting" ? null : h("div", { class: "group pad" },
-          toggle(chat.thoughts, (v) => { chat.thoughts = v; saveSoon(); }, `Show ${firstName(cast()[0].name)}'s thoughts`),
-          h("div", { class: "field-hint" }, "Every so often you'll see what they're really thinking, set apart in italics.")),
+          h("div", { class: "field-label" }, `${firstName(cast()[0].name)}'s thoughts`),
+          segmented([[0, "Off"], [1, "Sometimes"], [2, "Often"]], chat.thoughts, (v) => { chat.thoughts = v; saveSoon(); }),
+          h("div", { class: "field-hint" }, "What they're really thinking, set apart in italics. Shows up most in romantic, tense or spicy moments.")),
         isGroup() ? null : field("Relationship (slow burn)", chipSelect([["", "Off"], ...Object.entries(ARC_LABELS)], chat.arc, (v) => { chat.arc = v; saveSoon(); idleStatus(); }),
           "They stay at this stage until you move it forward, so it builds naturally instead of rushing."),
         field("Reply length", segmented([["short", "Short"], ["medium", "Medium"], ["long", "Long"]], chat.length, (v) => { chat.length = v; saveSoon(); })),

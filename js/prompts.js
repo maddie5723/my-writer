@@ -304,7 +304,8 @@ export function buildChatPrompt({ chat, cast, speaker, profile, settings, lore, 
     "- No meta commentary, disclaimers, or mentions of being an AI.",
     swearRule(settings),
     chat.thoughts && !isNarrator && mode !== "texting"
-      ? `- Now and then, reveal ${name}'s private thoughts in double parentheses, like ((She has no idea what she does to me.)). Only things ${name} would never say out loud; short, raw and honest.`
+      ? `- ${chat.thoughts >= 2 ? "In most replies" : "Now and then"}, reveal ${name}'s private thoughts in double parentheses, like ((She has no idea what she does to me.)). ` +
+        `Only things ${name} would never say out loud; short, raw and honest. Show them especially in romantic, tense or intimate moments: what ${name} wants, what scares them, what ${user} does to them.`
       : null,
   ].filter(Boolean).join("\n");
 
@@ -349,6 +350,8 @@ export function buildChatPrompt({ chat, cast, speaker, profile, settings, lore, 
   // Stored messages → model turns. In group scenes, label who said what.
   const label = (m) => {
     const t = msgText(m) || "…";
+    if (m.kind === "pov") return `(${speakerName(m, cast)}'s POV interlude) ${t}`;
+    if (m.kind === "skip") return `(Scene change) ${t}`;
     if (m.role === "user" || !group) return t;
     return m.speaker === "narrator" ? `(Narrator) ${t}` : `${speakerName(m, cast)}: ${t}`;
   };
