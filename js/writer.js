@@ -143,7 +143,7 @@ export function renderStory(id) {
         field("Each time, write", segmented([["short", "~300 words"], ["medium", "~600"], ["long", "~1,000"]], story.chunk, (v) => { story.chunk = v; persist(); })),
         field("Style", style));
     };
-    const toneTab = () => h("div", { class: "form" }, toneSliders(story.tone, persist));
+    const toneTab = () => h("div", { class: "form" }, toneSliders(story.tone, persist, { chat: false }));
     const t = tabs([{ label: "Plot", render: plot }, { label: "Cast", render: castTab }, { label: "Format", render: format }, { label: "Tone", render: toneTab }], startTab);
     sheet({ title: "Story setup", body: h("div", {}, t.bar, t.panel), onClose: () => { saveStory(story); drawCast(); } });
   }

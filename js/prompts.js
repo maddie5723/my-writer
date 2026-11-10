@@ -20,6 +20,7 @@ export const TONE_META = {
   realism: { label: "Realism", emoji: "🧭", low: "Stylized", high: "Grounded" },
   violence: { label: "Violence", emoji: "🗡️", low: "Implied", high: "Graphic" },
   creativity: { label: "Creativity", emoji: "✨", low: "Predictable", high: "Surprising" },
+  warmth: { label: "Warmth toward you", emoji: "🧡", low: "Guarded", high: "Smitten", chatOnly: true },
 };
 
 const pick = (v, steps) => steps[Math.min(steps.length - 1, Math.floor((v / 10.0001) * steps.length))];
@@ -30,12 +31,25 @@ export function toneWord(key, v) {
     realism: ["Cinematic", "Stylized", "Balanced", "Grounded", "Documentary"],
     violence: ["Off-screen", "Implied", "Moderate", "Intense", "Graphic"],
     creativity: ["Literal", "Steady", "Balanced", "Inventive", "Wild"],
+    warmth: ["Guarded", "Friendly", "Warm", "Affectionate", "Smitten"],
   };
   return pick(v, words[key]);
 }
 
-function toneInstructions(t) {
+/** How the character treats the user (chats only) */
+function warmthInstruction(v, user, pr = { obj: "them" }) {
+  return pick(v, [
+    `Warmth toward ${user}: guarded and prickly; trust has to be earned. Never cruel.`,
+    `Warmth toward ${user}: friendly and easygoing, with some teasing.`,
+    `Warmth toward ${user}: warm. Teasing is affectionate, never mean. Whatever mood the character is in, it's aimed at the situation, never at ${user}. Small kindnesses show they care.`,
+    `Warmth toward ${user}: openly affectionate and soft with ${pr.obj}, protective, tuned in to how ${user} is doing. Banter is playful and loving.`,
+    `Warmth toward ${user}: completely gone for ${pr.obj}. They soften the second ${user} is around and can't hide how much they adore ${pr.obj}, while still being fully themselves.`,
+  ]);
+}
+
+function toneInstructions(t, user = null, pr) {
   return [
+    user ? warmthInstruction(t.warmth ?? 6, user, pr) : null,
     pick(t.heat, [
       "Romance: none beyond friendly warmth.",
       "Romance: sweet and light; small moments of affection at most.",
@@ -64,7 +78,7 @@ function toneInstructions(t) {
       "Creativity: take initiative; introduce complications, choices and surprises.",
       "Creativity: be bold and surprising; drive the story in unexpected directions.",
     ]),
-  ].join("\n");
+  ].filter(Boolean).join("\n");
 }
 
 /** Slider "creativity" nudges the base temperature from Settings */
@@ -312,7 +326,7 @@ export function buildChatPrompt({ chat, cast, speaker, profile, settings, lore, 
     { title: "The story so far", priority: 9, body: chat.summary },
     { title: "Remember", priority: 8, body: f(chat.memory) },
     { title: "World notes", priority: 3, body: f(loreHits.join("\n")) },
-    { title: "Tone", priority: 9, body: toneInstructions(chat.tone) },
+    { title: "Tone", priority: 9, body: toneInstructions(chat.tone, isNarrator ? null : user, pr) },
     { title: "Writing style", priority: 6, body: [...new Set(cast.map((c) => f(c.style, c)).filter(Boolean)), settings.globalStyle].filter(Boolean).join("\n") },
     { title: "Content boundaries", priority: 9, body: boundaries },
     { title: `Hard rules from ${user} — never break these`, priority: 10, body: avoids.map((a) => `- ${a}`).join("\n") },

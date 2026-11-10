@@ -2,7 +2,7 @@
    Network-first for the app's own files (so updates show up right away),
    falling back to the cached copy when offline. The AI model files are
    cached separately by WebLLM, so they're not touched here. */
-const CACHE = "my-writer-v11";
+const CACHE = "my-writer-v12";
 const SHELL = [
   "./", "./index.html", "./styles.css", "./manifest.webmanifest", "./icons/icon.svg",
   "./js/app.js", "./js/ui.js", "./js/store.js", "./js/ai.js", "./js/prompts.js", "./js/layout.js",

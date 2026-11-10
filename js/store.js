@@ -9,7 +9,7 @@ export const uid = () => Math.random().toString(36).slice(2, 9) + Date.now().toS
 export const nowISO = () => new Date().toISOString();
 
 const SCHEMA = 2;
-const DEFAULT_TONE = { heat: 5, realism: 5, violence: 3, creativity: 6 };
+const DEFAULT_TONE = { heat: 5, realism: 5, violence: 3, creativity: 6, warmth: 6 }; // warmth 6 = "Warm" toward you
 export const DEFAULT_BOUNDARIES = "Everyone is an adult (21+). Everything is consensual.";
 
 function read(key, fallback = null) {
