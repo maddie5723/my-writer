@@ -52,10 +52,10 @@ function toneInstructions(t, user = null, pr) {
     user ? warmthInstruction(t.warmth ?? 6, user, pr) : null,
     pick(t.heat, [
       "Romance: none beyond friendly warmth.",
-      "Romance: sweet and light; small moments of affection at most.",
-      "Romance: flirting and chemistry are welcome; keep intimate moments brief or fade to black.",
-      "Romance: sensual tension is welcome and intimate moments can be described with feeling.",
-      "Romance: explicit intimacy between the consenting adults is allowed when the scene genuinely leads there.",
+      "Romance: sweet and light. Small moments of affection and soft looks; nothing physical beyond a hug.",
+      "Romance: flirty. Real flirting, teasing with an edge, chemistry you can feel, and innuendo. Kisses can happen; anything further fades to black.",
+      "Romance: steamy. Lean into physical awareness and desire: noticing each other's bodies, lingering touches, charged silences, heat in the character's thoughts. Make-outs are described with feeling; anything beyond that is sensual but not graphic.",
+      "Romance: spicy. Explicit content between the two consenting adults is wanted. Keep the sexual tension high, and when an intimate scene happens, write it fully and vividly: what they feel and what they want, with no fade-to-black and no skipping ahead.",
     ]),
     pick(t.realism, [
       "Realism: larger than life and cinematic; dramatic beats and heightened emotion are fine.",
@@ -212,7 +212,7 @@ export function swearRule(settings) {
 /* Slow-burn stages: how far the relationship has gone. The user moves it forward. */
 export const ARC_LABELS = { friends: "Friends", tension: "Tension", confessed: "Confessed", together: "Together" };
 const ARC_TEXT = {
-  friends: "Best friends. Comfortable, teasing and fiercely loyal, with years of history and inside jokes. Any attraction stays hidden: a look that lingers a beat too long, protectiveness that's a little too much, something almost said and then joked away. Nothing romantic happens yet.",
+  friends: "Best friends. Comfortable, teasing and fiercely loyal, with years of history and inside jokes. Any attraction stays hidden: a look that lingers a beat too long, protectiveness that's a little too much, something almost said and then joked away. The character won't make the first move yet.",
   tension: "The tension is getting hard to ignore. Almost-moments, jealousy they won't admit to, touches that last a second too long, late-night talks that get too close and get deflected. Neither of them has said it out loud yet.",
   confessed: "The feelings are out in the open now. It's new, nervous and intense; they're figuring out what this is without losing the friendship. Show the vulnerability and the years of history behind it.",
   together: "They're together. Comfortable and affectionate but still completely themselves: banter, inside jokes, protectiveness, and the danger of the job never goes away.",
@@ -323,7 +323,7 @@ export function buildChatPrompt({ chat, cast, speaker, profile, settings, lore, 
     { title: `About ${user}`, priority: 9, body: [userLine, adult, f(profile.persona)].filter(Boolean).join(" ") },
     { title: chat.premise ? "Background" : "The situation", priority: chat.premise ? 5 : 7, body: f(cast[0]?.scenario, cast[0]) },
     { title: chat.title ? `This storyline: ${chat.title}` : "This storyline", priority: 9, body: f(chat.premise, cast[0]) },
-    { title: `Where ${me ? me.name : "they"} and ${user} are right now`, priority: 9, body: chat.arc && ARC_TEXT[chat.arc] ? `${ARC_TEXT[chat.arc]} Let romance build slowly and naturally and never jump past this stage; ${user} decides when things move forward.` : "" },
+    { title: `Where ${me ? me.name : "they"} and ${user} are right now`, priority: 9, body: chat.arc && ARC_TEXT[chat.arc] ? `${ARC_TEXT[chat.arc]} The character doesn't push the relationship past this stage on their own, but the Romance level still shapes how much heat simmers underneath (attraction, tension, thoughts). ${user} sets the pace: if ${user} makes a move, the character responds to it honestly, in character, instead of dodging it.` : "" },
     { title: "The story so far", priority: 9, body: chat.summary },
     { title: "Remember", priority: 8, body: f(chat.memory) },
     { title: "World notes", priority: 3, body: f(loreHits.join("\n")) },
