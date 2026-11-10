@@ -344,6 +344,7 @@ export function buildChatPrompt({ chat, cast, speaker, profile, settings, lore, 
     isNarrator ? "Now write the Narrator's next passage only: describe what happens next" : `Now write ${name}'s next message only${voiceCue ? ` (voice: ${voiceCue})` : ""}`,
     `Don't write ${user}'s part${group && !isNarrator ? " or anyone else's" : ""}`,
     avoidCue ? `Never: ${avoidCue}` : "",
+    chat.thoughts && !isNarrator && mode !== "texting" ? `Put ${name}'s private thoughts inside ((double parentheses))` : "",
     chat.direction ? `Direction: ${chat.direction}` : "",
   ].filter(Boolean).join(". ") + ".]";
 

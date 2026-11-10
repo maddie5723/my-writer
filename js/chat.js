@@ -99,7 +99,8 @@ export function renderChat(chatId) {
     const parts = chat.mode === "texting" && m.role === "assistant" && m.speaker !== "narrator"
       ? text.split(/\n\s*\n/).map((s) => s.trim()).filter(Boolean)
       : [text];
-    return parts.map((p) => h("div", { class: "bubble", html: formatRP(p) }));
+    const opts = { thoughtsFromItalics: m.role === "assistant" && m.speaker !== "narrator" && !!chat.thoughts };
+    return parts.map((p) => h("div", { class: "bubble", html: formatRP(p, opts) }));
   }
 
   function messageMenu(m, anchor, isLast) {

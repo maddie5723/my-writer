@@ -82,13 +82,25 @@ export function esc(s = "") {
  *   "Hey."          -> speech
  *   **bold**        -> bold
  */
-export function formatRP(text = "") {
+// "I", "I'm", "me", "my"… : an italic line in the first person is a thought, not narration
+const FIRST_PERSON = /(^|[^\p{L}'])(i|i'm|i'd|i'll|i've|me|my|myself)(?=[^\p{L}']|$)/iu;
+
+/**
+ * opts.thoughtsFromItalics: in a character's reply, *italic text written as "I…"* is treated
+ * as a private thought (their narration is never in first person).
+ */
+export function formatRP(text = "", { thoughtsFromItalics = false } = {}) {
   // one pass, so the markup we add can never be re-matched by a later rule
-  //   ((thought)) -> the character's private thoughts
+  //   ((thought)) or [[thought]] -> the character's private thoughts
   return esc(text).replace(
-    /\(\(([^\n]+?)\)\)|\*\*([^*\n]+)\*\*|\*([^*\n][^*]*?)\*|(“[^”]*”|"[^"\n]*")/g,
-    (m, thought, bold, act, say) =>
-      thought ? `<span class="thought">${thought}</span>` : bold ? `<strong>${bold}</strong>` : act ? `<em class="act">${act}</em>` : `<span class="say">${say}</span>`);
+    /\(\(([^\n]+?)\)\)|\[\[([^\n]+?)\]\]|\*\*([^*\n]+)\*\*|\*([^*\n][^*]*?)\*|(“[^”]*”|"[^"\n]*")/g,
+    (m, thought, thought2, bold, act, say) => {
+      if (thought || thought2) return `<span class="thought">${thought || thought2}</span>`;
+      if (bold) return `<strong>${bold}</strong>`;
+      if (act) return thoughtsFromItalics && FIRST_PERSON.test(act) && !/["“]/.test(act)
+        ? `<span class="thought">${act}</span>` : `<em class="act">${act}</em>`;
+      return `<span class="say">${say}</span>`;
+    });
 }
 
 export function initials(name = "?") {
